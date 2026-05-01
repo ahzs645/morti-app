@@ -1,7 +1,7 @@
 import * as Y from 'yjs'
 import type { FurnitureDoc } from '~~/shared/domain/types'
 import { ensureInitialized, getFurnitureMap, readFurnitureDoc } from '~~/shared/yjs/doc'
-import { STORES, idbBoundedRange, idbGet, idbPut } from '~~/shared/idb/madera-db'
+import { STORES, idbBoundedRange, idbGet, idbPut } from '~~/shared/idb/morti-db'
 
 interface DesignStateRow {
   projectId: string
@@ -108,7 +108,7 @@ export async function useDesignDoc(projectId: string) {
       const sorted = [...existingRows, { projectId, seq: nextIndex, createdAt: Date.now(), snapshot: update }]
         .sort((a, b) => a.seq - b.seq)
       const toDrop = sorted.length - CHECKPOINT_CAP
-      const { idbDelete } = await import('~~/shared/idb/madera-db')
+      const { idbDelete } = await import('~~/shared/idb/morti-db')
       for (let i = 0; i < toDrop; i++) {
         const row = sorted[i]
         await idbDelete(STORES.designUndoCheckpoints, [row.projectId, row.seq])

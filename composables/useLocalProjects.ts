@@ -2,7 +2,7 @@ import * as Y from 'yjs'
 import type { LocalProjectRow } from '~~/shared/domain/types'
 import { cryptoRandomId } from '~~/shared/domain/defaults'
 import { ensureInitialized } from '~~/shared/yjs/doc'
-import { exportDoc, importDocFromBlob } from '~~/shared/yjs/madera-format'
+import { exportDoc, importDocFromBlob } from '~~/shared/yjs/morti-format'
 import {
   STORES,
   idbClearForProject,
@@ -10,7 +10,7 @@ import {
   idbGet,
   idbGetAll,
   idbPut,
-} from '~~/shared/idb/madera-db'
+} from '~~/shared/idb/morti-db'
 
 interface DesignStateRow {
   projectId: string
@@ -133,7 +133,7 @@ export function useLocalProjects() {
     return row
   }
 
-  async function importMaderaFile(blob: Blob, name: string): Promise<LocalProjectRow> {
+  async function importMortiFile(blob: Blob, name: string): Promise<LocalProjectRow> {
     const doc = await importDocFromBlob(blob)
     const update = Y.encodeStateAsUpdate(doc)
     const row = makeRow(name)
@@ -155,7 +155,7 @@ export function useLocalProjects() {
     return row
   }
 
-  async function exportMaderaFile(id: string): Promise<Blob | null> {
+  async function exportMortiFile(id: string): Promise<Blob | null> {
     const state = await idbGet<DesignStateRow>(STORES.designState, id)
     const bytes = stateBytes(state)
     if (!bytes) return null
@@ -187,9 +187,9 @@ export function useLocalProjects() {
     setLocalProjectCloudId,
     deleteLocalProject,
     duplicateLocalProject,
-    importMaderaFile,
+    importMortiFile,
     importDocAsCopy,
-    exportMaderaFile,
+    exportMortiFile,
     getDesignSnapshot,
     putDesignSnapshot,
   }

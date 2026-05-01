@@ -6,17 +6,17 @@
     "Public Sans", "Public Sans Fallback: BlinkMacSystemFont", "Public Sans Fallback: Segoe UI", "Public Sans Fallback: Helvetica Neue", "Public Sans Fallback: Arial",
     "Public Sans Fallback: Noto Sans", sans-serif;
 
-  --color-madera-50: #f3f7f4;
-  --color-madera-100: #e2ebe4;
-  --color-madera-200: #c6d6ca;
-  --color-madera-300: #9eb8a5;
-  --color-madera-400: #57865f;
-  --color-madera-500: #4a7352;
-  --color-madera-600: #3d5f44;
-  --color-madera-700: #334f39;
-  --color-madera-800: #2b4230;
-  --color-madera-900: #25372a;
-  --color-madera-950: #121c15;
+  --color-morti-50: #f3f7f4;
+  --color-morti-100: #e2ebe4;
+  --color-morti-200: #c6d6ca;
+  --color-morti-300: #9eb8a5;
+  --color-morti-400: #57865f;
+  --color-morti-500: #4a7352;
+  --color-morti-600: #3d5f44;
+  --color-morti-700: #334f39;
+  --color-morti-800: #2b4230;
+  --color-morti-900: #25372a;
+  --color-morti-950: #121c15;
 
   --ui-radius: 0.25rem;
   --ui-header-height: 4rem;

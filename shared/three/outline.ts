@@ -1,5 +1,5 @@
 /**
- * Madera outline post-processing pipeline.
+ * Morti outline post-processing pipeline.
  *
  * Spec source: _spec/15_outline_shader.md
  *   Original obfuscated source: _chunks/beautified/MUhM_d7C.js (487 lines).

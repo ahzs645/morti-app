@@ -1,7 +1,7 @@
 import type { HardwareSpec } from '~~/shared/domain/types'
 
 /**
- * Madera hardware catalog (1:1 from `B2kN8TtO.js:179-343`).
+ * Morti hardware catalog (1:1 from `B2kN8TtO.js:179-343`).
  *
  * Each entry is a piece of hardware that can be referenced from the design
  * (drawer slides, dowels, screws, etc.). The catalog is read by `/hardware`

@@ -140,7 +140,7 @@ function validateAssembly(columns: FurnitureColumn[], config: FurnitureConfig): 
 }
 
 // ---------------------------------------------------------------------------
-// Compile assembly (ported from the compiled Madera assembly generator)
+// Compile assembly (ported from the original Morti assembly generator)
 // ---------------------------------------------------------------------------
 
 const METRIC_SNAP = 0.001

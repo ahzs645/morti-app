@@ -2,10 +2,10 @@ import * as Y from 'yjs'
 import { DESIGN_SCHEMA_VERSION, ASSEMBLY_COMPILER_VERSION, TECHNICAL_RENDERER_VERSION } from '~~/shared/domain/types'
 import { ensureInitialized } from './doc'
 
-export const MADERA_FORMAT_VERSION = 1
-export const MADERA_MAX_BYTES = 32 * 1024 * 1024
+export const MORTI_FORMAT_VERSION = 1
+export const MORTI_MAX_BYTES = 32 * 1024 * 1024
 
-export interface MaderaEnvelope {
+export interface MortiEnvelope {
   formatVersion: number
   designSchemaVersion: number
   assemblyCompilerVersion: number
@@ -29,8 +29,8 @@ function base64ToBytes(b64: string): Uint8Array {
 
 export function exportDoc(doc: Y.Doc): Blob {
   const update = Y.encodeStateAsUpdate(doc)
-  const env: MaderaEnvelope = {
-    formatVersion: MADERA_FORMAT_VERSION,
+  const env: MortiEnvelope = {
+    formatVersion: MORTI_FORMAT_VERSION,
     designSchemaVersion: DESIGN_SCHEMA_VERSION,
     assemblyCompilerVersion: ASSEMBLY_COMPILER_VERSION,
     technicalRendererVersion: TECHNICAL_RENDERER_VERSION,
@@ -41,14 +41,14 @@ export function exportDoc(doc: Y.Doc): Blob {
 }
 
 export async function importDocFromBlob(blob: Blob): Promise<Y.Doc> {
-  if (blob.size > MADERA_MAX_BYTES) throw new Error('File too large.')
+  if (blob.size > MORTI_MAX_BYTES) throw new Error('File too large.')
   const buf = await blob.arrayBuffer()
   const bytes = new Uint8Array(buf)
   const doc = new Y.Doc()
   // Try JSON envelope first
   try {
     const text = new TextDecoder().decode(bytes)
-    const env = JSON.parse(text) as MaderaEnvelope
+    const env = JSON.parse(text) as MortiEnvelope
     if (env && typeof env.yjsUpdateBase64 === 'string') {
       Y.applyUpdate(doc, base64ToBytes(env.yjsUpdateBase64))
       ensureInitialized(doc)

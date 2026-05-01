@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { CameraState, CloudProjectRecord, LocalProjectRow, PublicStyle, ViewMode } from '~~/shared/domain/types'
 import { DEFAULT_CAMERA_STATE, normalizePublicStyle } from '~~/shared/domain/defaults'
-import { exportDoc } from '~~/shared/yjs/madera-format'
+import { exportDoc } from '~~/shared/yjs/morti-format'
 
 definePageMeta({ layout: false })
 
@@ -88,7 +88,7 @@ const canvasRenderMode = computed<'rendered' | 'render-debug' | 'technical'>(() 
 )
 const selectedModuleIds = computed<string[]>(() => selectedModules.value.map(module => module.id))
 const cutlistWipConfirmed = ref(false)
-const CUTLIST_WIP_STORAGE_KEY = 'madera-cutlist-wip-alert-confirmed'
+const CUTLIST_WIP_STORAGE_KEY = 'morti-cutlist-wip-alert-confirmed'
 
 function cloneDefaultCameraState(): CameraState {
   return {
@@ -458,7 +458,7 @@ async function exportProject() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${(project.value.name.trim() || 'project').replace(/[<>:"/\\|?*]/g, '-')}.madera`
+  a.download = `${(project.value.name.trim() || 'project').replace(/[<>:"/\\|?*]/g, '-')}.morti`
   a.rel = 'noopener'
   a.click()
   URL.revokeObjectURL(url)
@@ -680,7 +680,7 @@ const topChromeMaxWidth = computed(() => {
                   :module-volume-helpers-visible="moduleVolumeHelpersVisible"
                   :headless-capture="false"
                   :capture-yaw-radians="0"
-                  canvas-chrome-teleport-selector="#madera-project-canvas-chrome-host"
+                  canvas-chrome-teleport-selector="#morti-project-canvas-chrome-host"
                   class="h-full w-full"
                   @camera-change="onCameraChange"
                   @update:assembly-open-doors-drawers="(v: boolean) => (assemblyOpenDoorsDrawers = v)"
@@ -787,7 +787,7 @@ const topChromeMaxWidth = computed(() => {
       >
         <div class="pointer-events-auto flex max-w-full flex-row flex-wrap items-center justify-end gap-2">
           <div
-            id="madera-project-canvas-chrome-host"
+            id="morti-project-canvas-chrome-host"
             class="min-h-0 shrink-0"
           />
           <ProjectCloudActions

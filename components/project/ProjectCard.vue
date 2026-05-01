@@ -39,7 +39,7 @@ const emit = defineEmits<{
   (e: 'toggleDemo', projectId: string): void
 }>()
 
-const { exportMaderaFile } = useLocalProjects()
+const { exportMortiFile } = useLocalProjects()
 
 const isPinned = computed(() => props.project.pinned ?? false)
 const projectTo = computed(() => props.to ?? `/project/${props.project.id}`)
@@ -53,12 +53,12 @@ const formattedDate = computed(() => {
 
 async function exportProject() {
   if (!import.meta.client) return
-  const blob = await exportMaderaFile(props.project.id)
+  const blob = await exportMortiFile(props.project.id)
   if (!blob) return
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${(props.project.name.trim() || 'project').replace(/[<>:"/\\|?*]/g, '-')}.madera`
+  a.download = `${(props.project.name.trim() || 'project').replace(/[<>:"/\\|?*]/g, '-')}.morti`
   a.rel = 'noopener'
   a.click()
   URL.revokeObjectURL(url)

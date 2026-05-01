@@ -1,7 +1,7 @@
 import posthog from 'posthog-js'
-import type PocketBase from 'pocketbase'
+import type { AuthUser } from '~~/shared/domain/types'
 
-function isEmailVerified(user: any): boolean {
+function isEmailVerified(user: AuthUser | null): boolean {
   if (!user) return false
   return (
     user.verified === true ||
@@ -31,18 +31,18 @@ export default defineNuxtPlugin((nuxtApp) => {
     ;(window as any).__POSTHOG__ = posthog
   }
 
-  const pb = nuxtApp.$pb as PocketBase
+  const { user } = useAuth()
   let lastKey = ''
 
   const sync = () => {
-    if (!pb.authStore.isValid || !pb.authStore.record?.id) {
+    if (!user.value?.id) {
       if (lastKey !== '') {
         posthog.reset()
         lastKey = ''
       }
       return
     }
-    const u: any = pb.authStore.record
+    const u = user.value
     const email = typeof u.email === 'string' ? u.email.trim() : ''
     const verified = isEmailVerified(u)
     const key = `${u.id}:${email}:${verified ? '1' : '0'}`
@@ -56,9 +56,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   }
 
   sync()
-  pb.authStore.onChange(() => {
-    sync()
-  })
+  watch(user, sync, { deep: true })
 
   nuxtApp.provide('posthog', posthog)
 })

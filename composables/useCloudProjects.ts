@@ -1,8 +1,6 @@
 import * as Y from 'yjs'
 import type { CloudProjectRecord, LocalProjectRow, ProjectVisibility, PublicStyle } from '~~/shared/domain/types'
-import { STORES, idbPut } from '~~/shared/idb/madera-db'
-
-const COLLECTION = 'madera_projects'
+import { STORES, idbPut } from '~~/shared/idb/morti-db'
 
 interface EnsureCloudProjectOpts {
   clientProjectId: string
@@ -44,36 +42,35 @@ function mergeUpdates(local: Uint8Array | null, remote: Uint8Array): Uint8Array 
   return Y.encodeStateAsUpdate(doc)
 }
 
-export function useCloudProjects() {
-  const pb = usePb()
-
-  function getAuthUserId(): string {
-    const id = (pb.authStore.record as { id?: string } | null)?.id
-    if (!id) throw new Error('Not authenticated.')
-    return id
+async function fetchRecordOrNull(path: string): Promise<CloudProjectRecord | null> {
+  try {
+    return await $fetch<CloudProjectRecord>(path)
   }
+  catch (err: unknown) {
+    const status = (err as { status?: number, statusCode?: number } | null)?.status
+      ?? (err as { statusCode?: number } | null)?.statusCode
+    if (status === 401 || status === 404) return null
+    throw err
+  }
+}
+
+export function useCloudProjects() {
+  const { user } = useAuth()
 
   function isAdmin(): boolean {
-    return (pb.authStore.record as { is_admin?: boolean } | null)?.is_admin === true
+    return user.value?.is_admin === true
   }
 
   async function listOwnerCloudProjects(options: OwnerCloudListOptions = {}): Promise<CloudProjectRecord[]> {
+    const query = options.includeDemos ? '?includeDemos=true' : ''
     try {
-      if (!pb.authStore.isValid) return []
-      const userId = getAuthUserId()
-      const records = await pb.collection(COLLECTION).getFullList<CloudProjectRecord>({
-        filter: `owner = ${JSON.stringify(userId)} && deleted_at = ""`,
-        sort: '-updated',
-      })
-      return records.filter((record) => {
-        if (!record.client_project_id) return false
-        if (record.is_demo) return options.includeDemos === true && record.visibility === 'public'
-        return true
-      })
+      return await $fetch<CloudProjectRecord[]>(`/api/projects${query}`)
     }
-    catch {
-      // Local-only mode: no cloud backend reachable.
-      return []
+    catch (err: unknown) {
+      const status = (err as { status?: number, statusCode?: number } | null)?.status
+        ?? (err as { statusCode?: number } | null)?.statusCode
+      if (status === 401) return []
+      throw err
     }
   }
 
@@ -82,36 +79,16 @@ export function useCloudProjects() {
   }
 
   async function listDemos(): Promise<CloudProjectRecord[]> {
-    try {
-      return await pb.collection(COLLECTION).getFullList<CloudProjectRecord>({
-        filter: 'is_demo = true && visibility = "public"',
-        sort: '-updated',
-      })
-    }
-    catch {
-      // Local-only mode: no cloud backend reachable.
-      return []
-    }
+    return await $fetch<CloudProjectRecord[]>('/api/projects?demos=true')
   }
 
   async function findCloudProjectByClientId(clientProjectId: string): Promise<CloudProjectRecord | null> {
-    if (!pb.authStore.isValid) return null
-    try {
-      const matches = await pb.collection(COLLECTION).getList<CloudProjectRecord>(1, 10, {
-        filter: `client_project_id = ${JSON.stringify(clientProjectId)}`,
-        sort: '-updated',
-      })
-      return matches.items.filter(record => !isDeleted(record)).find(record => record.visibility === 'public') ?? matches.items.filter(record => !isDeleted(record))[0] ?? null
-    }
-    catch (err: unknown) {
-      const status = (err as { status?: number } | null)?.status
-      if (status === 404) return null
-      throw err
-    }
+    if (!user.value?.id) return null
+    return await fetchRecordOrNull(`/api/projects/by-client/${encodeURIComponent(clientProjectId)}`)
   }
 
   async function reconcileLocalProjectsWithOwnerCloud(options: OwnerCloudListOptions = {}): Promise<CloudProjectRecord[]> {
-    if (!pb.authStore.isValid) return []
+    if (!user.value?.id) return []
     const records = await listOwnerCloudProjects(options)
     const local = useLocalProjects()
     for (const record of records) {
@@ -147,30 +124,36 @@ export function useCloudProjects() {
       if (existing.name !== project.name) patch.name = project.name
       if (stylePayload !== undefined && existing.public_style !== stylePayload) patch.public_style = stylePayload
       if (Object.keys(patch).length === 0) return existing
-      await pb.collection(COLLECTION).update(existing.id, patch)
-      return await pb.collection(COLLECTION).getOne<CloudProjectRecord>(existing.id)
+      return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(existing.id)}`, {
+        method: 'PATCH',
+        body: patch,
+      })
     }
-    const userId = getAuthUserId()
-    return await pb.collection(COLLECTION).create<CloudProjectRecord>({
-      owner: userId,
-      name: project.name,
-      visibility: 'private' as ProjectVisibility,
-      client_project_id: clientProjectId,
-      is_demo: false,
-      remix_count: 0,
-      public_style: stylePayload,
+    return await $fetch<CloudProjectRecord>('/api/projects', {
+      method: 'POST',
+      body: {
+        name: project.name,
+        client_project_id: clientProjectId,
+        public_style: stylePayload,
+      },
     })
   }
 
   async function softDeleteCloudProjectForClientId(clientProjectId: string): Promise<void> {
     const rec = await findCloudProjectByClientId(clientProjectId)
     if (!rec) return
-    await pb.collection(COLLECTION).update(rec.id, { deleted_at: new Date().toISOString() })
+    await $fetch(`/api/projects/${encodeURIComponent(rec.id)}`, {
+      method: 'PATCH',
+      body: { deleted_at: new Date().toISOString() },
+    })
   }
 
   async function uploadSnapshotBytes(recordId: string, clientProjectId: string, bytes: Uint8Array): Promise<CloudProjectRecord> {
     const form = snapshotFormData(bytes, clientProjectId)
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(recordId, form)
+    return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}/snapshot`, {
+      method: 'PUT',
+      body: form,
+    })
   }
 
   async function fetchSnapshotBytes(record: CloudProjectRecord): Promise<Uint8Array | null> {
@@ -195,35 +178,46 @@ export function useCloudProjects() {
     const rec = await ensureCloudProject(project, style)
     const form = snapshotFormData(bytes, project.id)
     form.append('name', project.name)
-    form.append('visibility', 'public')
-    form.append('published_at', new Date().toISOString())
     const stylePayload = publicStylePayload(style)
     if (stylePayload !== undefined) form.append('public_style', stylePayload)
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(rec.id, form)
+    return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(rec.id)}/publish`, {
+      method: 'POST',
+      body: form,
+    })
   }
 
   async function unpublishCloudProject(recordId: string): Promise<CloudProjectRecord> {
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(recordId, { visibility: 'private' })
+    return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
+      method: 'PATCH',
+      body: { visibility: 'private' },
+    })
   }
 
   async function downloadSnapshotIntoLocal(recordId: string, localProjectId: string): Promise<void> {
-    const record = await pb.collection(COLLECTION).getOne<CloudProjectRecord>(recordId)
+    const record = await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`)
     const bytes = await fetchSnapshotBytes(record)
     if (!bytes || bytes.byteLength === 0) throw new Error('No cloud snapshot for this project.')
     await useLocalProjects().putDesignSnapshot(localProjectId, bytes)
   }
 
   async function setCloudProjectName(recordId: string, name: string): Promise<CloudProjectRecord> {
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(recordId, { name })
+    return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
+      method: 'PATCH',
+      body: { name },
+    })
   }
 
   async function setCloudProjectVisibility(recordId: string, visibility: ProjectVisibility): Promise<CloudProjectRecord> {
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(recordId, { visibility })
+    return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
+      method: 'PATCH',
+      body: { visibility },
+    })
   }
 
   async function setCloudPublicStyle(recordId: string, style: PublicStyle): Promise<CloudProjectRecord> {
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(recordId, {
-      public_style: publicStylePayload(style),
+    return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
+      method: 'PATCH',
+      body: { public_style: publicStylePayload(style) },
     })
   }
 
@@ -232,14 +226,18 @@ export function useCloudProjects() {
   }
 
   async function setCloudPublishedAt(recordId: string, isoOrNull: string | null): Promise<CloudProjectRecord> {
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(recordId, {
-      published_at: isoOrNull ?? '',
+    return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
+      method: 'PATCH',
+      body: { published_at: isoOrNull },
     })
   }
 
   async function setIsDemo(recordId: string, isDemo: boolean): Promise<CloudProjectRecord> {
     if (!isAdmin()) throw new Error('Admin access is required.')
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(recordId, { is_demo: isDemo })
+    return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
+      method: 'PATCH',
+      body: { is_demo: isDemo },
+    })
   }
 
   async function updateCloudProjectDemoFlag(recordId: string, isDemo: boolean): Promise<CloudProjectRecord> {
@@ -247,11 +245,13 @@ export function useCloudProjects() {
   }
 
   async function incrementRemixCount(recordId: string): Promise<CloudProjectRecord> {
-    return await pb.collection(COLLECTION).update<CloudProjectRecord>(recordId, { 'remix_count+': 1 })
+    return await $fetch<CloudProjectRecord>(`/api/public/projects/${encodeURIComponent(recordId)}/remix`, {
+      method: 'POST',
+    })
   }
 
   function getSnapshotURL(record: CloudProjectRecord): string {
-    return pb.files.getURL(record, record.snapshot)
+    return `/api/projects/${encodeURIComponent(record.id)}/snapshot`
   }
 
   return {

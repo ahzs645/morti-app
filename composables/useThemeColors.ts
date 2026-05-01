@@ -54,7 +54,7 @@ const CSS_VARS: Record<ThemeTokenName, string> = {
   success500: '--color-success-500',
 }
 
-// Fallback default values (Madera dark theme; xpmfTx8z.js lines 14-24)
+// Fallback default values (Morti dark theme; xpmfTx8z.js lines 14-24)
 const DEFAULTS: Record<ThemeTokenName, ThemeColor> = {
   backgroundDefault: { rgbCss: 'rgb(28, 25, 23)', hex: 0x1c1917 },
   backgroundMuted: { rgbCss: 'rgb(41, 37, 36)', hex: 0x292524 },

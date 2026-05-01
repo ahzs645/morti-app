@@ -1,6 +1,5 @@
 <script setup lang="ts">
-const { user, requestVerification, signOut } = useAuth()
-const { $pb } = useNuxtApp()
+const { user, requestVerification, refreshUser, signOut } = useAuth()
 
 const sending = ref(false)
 const refreshing = ref(false)
@@ -18,7 +17,7 @@ async function onResend() {
   sending.value = true
   try {
     await requestVerification(email)
-    message.value = `We sent a verification link to ${email}.`
+    message.value = `We sent a verification code to ${email}.`
   }
   catch (err: unknown) {
     error.value = (err as { message?: string } | null)?.message ?? 'Could not send the verification email.'
@@ -32,10 +31,7 @@ async function onAlreadyVerified() {
   error.value = ''
   refreshing.value = true
   try {
-    await ($pb as { collection: (n: string) => { authRefresh: () => Promise<unknown> } })
-      .collection('users')
-      .authRefresh()
-    if (import.meta.client) window.location.reload()
+    await refreshUser()
   }
   catch (err: unknown) {
     error.value = (err as { message?: string } | null)?.message ?? 'Could not refresh your session.'
@@ -58,7 +54,7 @@ async function onSignOut() {
           Verify your email
         </h2>
         <p class="text-sm text-muted">
-          We sent a verification link to
+          We sent a verification code to
           <span class="font-medium text-highlighted">{{ user?.email ?? 'your email' }}</span>.
           You need to verify your email before you can sync to the cloud or publish projects.
         </p>

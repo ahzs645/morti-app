@@ -67,10 +67,20 @@ export interface PublicStyle {
 
 export type ProjectVisibility = 'public' | 'private'
 
+export interface AuthUser {
+  id: string
+  email: string
+  verified: boolean
+  email_validated_at: string
+  is_admin: boolean
+  created: string
+  updated: string
+}
+
 export interface CloudProjectRecord {
   id: string
   collectionId: string
-  collectionName: 'madera_projects'
+  collectionName: 'morti_projects'
   owner: string
   name: string
   visibility: ProjectVisibility

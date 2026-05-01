@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 /**
- * Material registry — mirrors the verbatim Madera `Dt_x5Iy5.js` materials at
+ * Material registry — mirrors the verbatim Morti `Dt_x5Iy5.js` materials at
  * lines 5476–5568 (panel mesh classes `di` / `fr` / `$r`).
  *
  * Three modes:

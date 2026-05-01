@@ -21,24 +21,14 @@ function parsePublicStyle(raw: string | undefined | null): PublicStyle {
   }
 }
 
-/**
- * Load a public project for the read-only viewer (`/p/:id`) or render route
- * (`/render/p/:id`). Hits PocketBase, downloads the snapshot bytes, applies
- * them to a fresh `Y.Doc`, and returns the parsed `publicStyle`.
- *
- * Throws (via `createError`) on PocketBase 403 / 404 with the user-facing
- * message "This project is private or no longer available."
- */
 export async function loadPublicProject(cloudId: string): Promise<LoadPublicProjectResult> {
-  const pb = usePb()
-  const { getSnapshotURL } = useCloudProjects()
-
   let record: CloudProjectRecord
   try {
-    record = await pb.collection('madera_projects').getOne<CloudProjectRecord>(cloudId)
+    record = await $fetch<CloudProjectRecord>(`/api/public/projects/${encodeURIComponent(cloudId)}`)
   }
   catch (err: unknown) {
-    const status = (err as { status?: number } | null)?.status
+    const status = (err as { status?: number, statusCode?: number } | null)?.status
+      ?? (err as { statusCode?: number } | null)?.statusCode
     if (status === 403 || status === 404) {
       throw createError({
         statusCode: status,
@@ -60,8 +50,7 @@ export async function loadPublicProject(cloudId: string): Promise<LoadPublicProj
     })
   }
 
-  const url = getSnapshotURL(record)
-  const resp = await fetch(url)
+  const resp = await fetch(`/api/public/projects/${encodeURIComponent(record.id)}/snapshot`)
   if (!resp.ok) {
     throw createError({
       statusCode: resp.status,

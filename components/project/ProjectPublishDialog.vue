@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import type { CloudProjectRecord, LocalProjectRow, PublicStyle } from '~~/shared/domain/types'
+import * as Y from 'yjs'
+import type { CloudProjectRecord, FurnitureColumn, FurnitureConfig, LocalProjectRow, PublicStyle } from '~~/shared/domain/types'
 import { normalizePublicStyle } from '~~/shared/domain/defaults'
 import { isRenderMessage, RENDER_MESSAGES } from '~~/shared/render/messages'
+import { ensureInitialized, readFurnitureDoc } from '~~/shared/yjs/doc'
 
 interface Props {
   open: boolean
@@ -23,15 +25,19 @@ const emit = defineEmits<{
   (e: 'unpublished'): void
 }>()
 
-const RENDER_VIDEO_SIZE_PX = 1080
-const RENDER_FPS = 59
+const RENDER_VIDEO_SIZE_PX = 480
+const RENDER_FPS = 24
+const RENDER_DURATION_SECONDS = 3
+const AUTO_RENDER_DELAY_MS = 300
 const COPIED_FEEDBACK_MS = 2000
 
 const open = computed({
   get: () => props.open,
   set: (value: boolean) => emit('update:open', value),
 })
+const runtimeConfig = useRuntimeConfig()
 const { publishFromLocal, unpublishCloudProject } = useCloudProjects()
+const { getDesignSnapshot } = useLocalProjects()
 
 const publishing = ref(false)
 const unpublishing = ref(false)
@@ -48,7 +54,9 @@ const isPublished = computed(() => {
 const publicShareUrl = computed(() => {
   const record = cloudRecord.value
   if (!isPublished.value || !record?.id || !import.meta.client) return ''
-  return `${window.location.origin}/p/${record.id}`
+  const configuredOrigin = String(runtimeConfig.public.appBaseUrl || '').replace(/\/+$/, '')
+  const origin = configuredOrigin || window.location.origin
+  return `${origin}/p/${record.id}`
 })
 const hasPublicShareUrl = computed(() => publicShareUrl.value.length > 0)
 const title = computed(() => isPublished.value ? 'Published project' : 'Publish project')
@@ -57,32 +65,127 @@ const description = computed(() =>
     ? 'Share the link below. Your cloud draft is what viewers see; autosync keeps it up to date.'
     : 'Make this project public. The share link shows your current cloud design; edits sync to the published view.',
 )
+const mp4ActionLabel = computed(() => {
+  if (previewVideoUrl.value) return 'Download MP4'
+  if (isRendering.value) return 'Generating MP4'
+  if (renderError.value) return 'Retry MP4'
+  return 'Generate MP4'
+})
+const mp4ActionIcon = computed(() => previewVideoUrl.value ? 'i-lucide-download' : 'i-lucide-video')
 
 const normalizedPublicStyle = computed(() => normalizePublicStyle(props.publicStyle))
 const renderStyleFingerprint = computed(() => JSON.stringify(normalizedPublicStyle.value))
 const iframeSrc = ref<string | null>(null)
 const iframeKey = ref(0)
+const activeRenderId = ref('')
 const renderIframeRef = ref<HTMLIFrameElement | null>(null)
 const isRendering = ref(false)
 const renderError = ref('')
 const previewVideoBlob = ref<Blob | null>(null)
 const previewVideoUrl = ref<string | null>(null)
+const previewColumns = shallowRef<FurnitureColumn[]>([])
+const previewConfig = shallowRef<FurnitureConfig | null>(null)
+const previewLoading = ref(false)
+let previewLoadSeq = 0
+let renderStartTimer: ReturnType<typeof setTimeout> | undefined
+let renderSeq = 0
+let renderedFingerprint = ''
 
-function resetPreview() {
+const renderFingerprint = computed(() => {
+  const record = cloudRecord.value
+  return [
+    props.project.id,
+    record?.id ?? '',
+    record?.snapshot ?? '',
+    record?.updated ?? '',
+    renderStyleFingerprint.value,
+  ].join('|')
+})
+
+function clearRenderStartTimer() {
+  if (renderStartTimer === undefined) return
+  clearTimeout(renderStartTimer)
+  renderStartTimer = undefined
+}
+
+function resetVideoPreview(clearCompleted = true) {
+  clearRenderStartTimer()
   if (previewVideoUrl.value) URL.revokeObjectURL(previewVideoUrl.value)
   previewVideoUrl.value = null
   previewVideoBlob.value = null
   iframeSrc.value = null
+  activeRenderId.value = ''
+  renderIframeRef.value = null
   isRendering.value = false
   renderError.value = ''
+  if (clearCompleted) renderedFingerprint = ''
+}
+
+function resetStillPreview() {
+  previewLoadSeq += 1
+  previewColumns.value = []
+  previewConfig.value = null
+  previewLoading.value = false
+}
+
+async function loadStillPreview() {
+  const seq = ++previewLoadSeq
+  previewLoading.value = true
+  try {
+    const bytes = await getDesignSnapshot(props.project.id)
+    if (seq !== previewLoadSeq) return
+    if (!bytes || bytes.byteLength === 0) {
+      previewColumns.value = []
+      previewConfig.value = null
+      return
+    }
+    const doc = new Y.Doc()
+    try {
+      Y.applyUpdate(doc, bytes)
+      ensureInitialized(doc)
+      const data = readFurnitureDoc(doc)
+      if (seq !== previewLoadSeq) return
+      previewColumns.value = data.columns
+      previewConfig.value = data.config
+    }
+    finally {
+      doc.destroy()
+    }
+  }
+  catch {
+    if (seq === previewLoadSeq) {
+      previewColumns.value = []
+      previewConfig.value = null
+    }
+  }
+  finally {
+    if (seq === previewLoadSeq) previewLoading.value = false
+  }
 }
 
 function startPreviewRender() {
-  if (!open.value || !isPublished.value) return
-  resetPreview()
+  if (!open.value || !isPublished.value || isRendering.value) return
+  const fingerprint = renderFingerprint.value
+  if (previewVideoUrl.value && renderedFingerprint === fingerprint) return
+  clearRenderStartTimer()
+  if (previewVideoUrl.value) URL.revokeObjectURL(previewVideoUrl.value)
+  previewVideoUrl.value = null
+  previewVideoBlob.value = null
+  renderError.value = ''
   isRendering.value = true
   iframeKey.value += 1
-  iframeSrc.value = `/render/project/${encodeURIComponent(props.project.id)}?size=${RENDER_VIDEO_SIZE_PX}&fps=${RENDER_FPS}&style=${encodeURIComponent(renderStyleFingerprint.value)}`
+  activeRenderId.value = `${Date.now().toString(36)}-${(++renderSeq).toString(36)}`
+  iframeSrc.value = `/render/project/${encodeURIComponent(props.project.id)}?size=${RENDER_VIDEO_SIZE_PX}&fps=${RENDER_FPS}&duration=${RENDER_DURATION_SECONDS}&renderId=${encodeURIComponent(activeRenderId.value)}&style=${encodeURIComponent(renderStyleFingerprint.value)}`
+}
+
+function schedulePreviewRender() {
+  if (!open.value || !isPublished.value || isRendering.value) return
+  if (previewVideoUrl.value && renderedFingerprint === renderFingerprint.value) return
+  clearRenderStartTimer()
+  renderStartTimer = setTimeout(() => {
+    renderStartTimer = undefined
+    startPreviewRender()
+  }, AUTO_RENDER_DELAY_MS)
 }
 
 function safeFileName(name: string): string {
@@ -95,10 +198,18 @@ function downloadPreview() {
   const url = URL.createObjectURL(previewVideoBlob.value)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${safeFileName(props.project.name)}-360.mp4`
+  a.download = `${safeFileName(props.project.name)}-480.mp4`
   a.rel = 'noopener'
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function onPreviewVideoAction() {
+  if (previewVideoUrl.value) {
+    downloadPreview()
+    return
+  }
+  startPreviewRender()
 }
 
 function onWindowMessage(ev: MessageEvent) {
@@ -106,21 +217,27 @@ function onWindowMessage(ev: MessageEvent) {
   if (ev.origin !== window.location.origin) return
   if (ev.source !== renderIframeRef.value?.contentWindow) return
   if (!isRenderMessage(ev.data)) return
+  if (ev.data.renderId !== activeRenderId.value) return
   if (ev.data.type === RENDER_MESSAGES.READY || ev.data.type === RENDER_MESSAGES.PROGRESS) return
 
   if (ev.data.type === RENDER_MESSAGES.ERROR) {
     renderError.value = ev.data.message
     isRendering.value = false
     iframeSrc.value = null
+    activeRenderId.value = ''
+    renderIframeRef.value = null
     return
   }
   if (ev.data.type === RENDER_MESSAGES.DONE) {
-    const blob = new Blob([ev.data.buffer.slice(0)], { type: 'video/mp4' })
+    const blob = new Blob([ev.data.buffer], { type: 'video/mp4' })
     previewVideoBlob.value = blob
     if (previewVideoUrl.value) URL.revokeObjectURL(previewVideoUrl.value)
     previewVideoUrl.value = URL.createObjectURL(blob)
+    renderedFingerprint = renderFingerprint.value
     isRendering.value = false
     iframeSrc.value = null
+    activeRenderId.value = ''
+    renderIframeRef.value = null
   }
 }
 
@@ -128,19 +245,37 @@ watch(open, async (next) => {
   if (next) {
     errorMessage.value = ''
     copiedFlash.value = false
-    resetPreview()
+    resetVideoPreview()
     await nextTick()
-    startPreviewRender()
+    await loadStillPreview()
+    schedulePreviewRender()
   }
   else {
-    resetPreview()
+    resetVideoPreview()
+    resetStillPreview()
   }
 })
 
-watch([isPublished, renderStyleFingerprint], async () => {
+watch(() => props.project.id, async () => {
   if (!open.value) return
+  resetVideoPreview()
   await nextTick()
-  startPreviewRender()
+  await loadStillPreview()
+  schedulePreviewRender()
+})
+
+watch(isPublished, async (next) => {
+  if (!open.value || !next) return
+  resetVideoPreview()
+  await nextTick()
+  await loadStillPreview()
+  schedulePreviewRender()
+})
+
+watch(renderStyleFingerprint, () => {
+  if (!open.value) return
+  resetVideoPreview()
+  schedulePreviewRender()
 })
 
 onMounted(() => {
@@ -150,7 +285,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (import.meta.client) window.removeEventListener('message', onWindowMessage)
   if (copiedTimer !== undefined) clearTimeout(copiedTimer)
-  resetPreview()
+  resetVideoPreview()
+  resetStillPreview()
 })
 
 async function publishProject() {
@@ -161,7 +297,8 @@ async function publishProject() {
     const published = await publishFromLocal(props.project, normalizedPublicStyle.value)
     emit('published', published)
     await nextTick()
-    startPreviewRender()
+    await loadStillPreview()
+    schedulePreviewRender()
   }
   catch (err: unknown) {
     errorMessage.value = (err as { message?: string } | null)?.message ?? 'Publish failed.'
@@ -215,17 +352,8 @@ async function unpublishProject() {
         class="flex flex-col items-center gap-3"
       >
         <div class="relative aspect-square w-full max-w-[min(100%,20rem)] overflow-hidden rounded-lg border border-default bg-muted">
-          <div
-            v-if="isRendering"
-            class="absolute inset-0 flex items-center justify-center"
-          >
-            <UIcon
-              name="i-lucide-loader-circle"
-              class="size-10 animate-spin text-muted"
-            />
-          </div>
           <video
-            v-else-if="previewVideoUrl"
+            v-if="previewVideoUrl"
             :src="previewVideoUrl"
             class="size-full bg-black object-contain"
             muted
@@ -233,21 +361,37 @@ async function unpublishProject() {
             autoplay
             playsinline
           />
-          <div
+          <ProjectPreview
             v-else
-            class="flex size-full min-h-[8rem] items-center justify-center bg-muted px-3 text-center text-xs text-muted"
+            :columns="previewColumns"
+            :furniture-config="previewConfig"
+            class="size-full rounded-none border-0 ring-0"
+          />
+          <div
+            v-if="isRendering"
+            class="absolute inset-0 flex items-center justify-center bg-default/70 backdrop-blur-sm"
           >
-            Preparing preview…
+            <UIcon
+              name="i-lucide-loader-circle"
+              class="size-10 animate-spin text-muted"
+            />
+          </div>
+          <div
+            v-else-if="previewLoading"
+            class="absolute inset-0 flex items-center justify-center bg-muted px-3 text-center text-xs text-muted"
+          >
+            Loading preview...
           </div>
         </div>
         <UButton
-          v-if="previewVideoUrl"
-          icon="i-lucide-download"
-          label="Download MP4"
+          :icon="mp4ActionIcon"
+          :label="mp4ActionLabel"
           color="neutral"
           variant="outline"
           class="w-full max-w-[min(100%,20rem)] justify-center"
-          @click="downloadPreview"
+          :loading="isRendering"
+          :disabled="isRendering"
+          @click="onPreviewVideoAction"
         />
         <UAlert
           v-if="renderError"
@@ -304,7 +448,7 @@ async function unpublishProject() {
           color="neutral"
           variant="outline"
           class="w-full min-w-0 justify-center"
-          :disabled="publishing || unpublishing || isRendering"
+          :disabled="publishing || unpublishing"
           @click="close()"
         />
         <UButton
@@ -312,7 +456,7 @@ async function unpublishProject() {
           label="Publish"
           class="w-full min-w-0 justify-center"
           :loading="publishing"
-          :disabled="unpublishing || isRendering"
+          :disabled="unpublishing"
           @click="publishProject"
         />
       </div>
@@ -326,7 +470,7 @@ async function unpublishProject() {
     :src="iframeSrc"
     :width="RENDER_VIDEO_SIZE_PX"
     :height="RENDER_VIDEO_SIZE_PX"
-    title="Madera video render"
+    title="Morti video render"
     class="pointer-events-none fixed left-[-9999px] top-0 border-0 opacity-0"
   />
 

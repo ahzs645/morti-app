@@ -16,7 +16,7 @@ const { data, error, pending } = await useAsyncData(
 
 // Cross-page state: survive sign-in redirect so we can resume the remix.
 const pendingRemixCloudId = useState<string | null>(
-  'madera-pending-remix-cloud-id',
+  'morti-pending-remix-cloud-id',
   () => null,
 )
 
@@ -42,6 +42,12 @@ async function doRemix(cloudIdArg?: string) {
   remixLoading.value = true
   try {
     const newRow = await importDocAsCopy(data.value.doc, `${data.value.record.name} (remix)`)
+    try {
+      await $fetch(`/api/public/projects/${encodeURIComponent(cloudId)}/remix`, { method: 'POST' })
+    }
+    catch {
+      // Remix count is best-effort; the local copy should still open.
+    }
     pendingRemixCloudId.value = null
     await navigateTo(`/project/${newRow.id}`)
   }

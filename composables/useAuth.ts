@@ -1,95 +1,100 @@
-// Local-only auth — no PocketBase / Postgres backend.
-// Sign-in is instant: any email creates a local synthetic user persisted in
-// localStorage. The OTP step is bypassed (authWithOtp returns immediately).
+import type { AuthUser } from '~~/shared/domain/types'
 
-const LOCAL_USER_KEY = 'madera-local-user'
+const CACHED_USER_KEY = 'morti-auth-user'
 
-interface LocalUser {
-  id: string
-  email: string
-  verified: true
-  email_validated_at: string
-  is_admin: boolean
-  created: string
-  updated: string
+interface OtpRequestResponse {
+  otpId: string
+  expiresAt: string
 }
 
-function loadLocalUser(): LocalUser | null {
+interface AuthResponse {
+  user: AuthUser
+}
+
+function loadCachedUser(): AuthUser | null {
   if (!import.meta.client) return null
   try {
-    const raw = localStorage.getItem(LOCAL_USER_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as LocalUser
+    const raw = localStorage.getItem(CACHED_USER_KEY)
+    return raw ? JSON.parse(raw) as AuthUser : null
   }
   catch {
     return null
   }
 }
 
-function saveLocalUser(u: LocalUser | null) {
+function saveCachedUser(user: AuthUser | null) {
   if (!import.meta.client) return
-  if (u) localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(u))
-  else localStorage.removeItem(LOCAL_USER_KEY)
+  if (user) localStorage.setItem(CACHED_USER_KEY, JSON.stringify(user))
+  else localStorage.removeItem(CACHED_USER_KEY)
 }
 
-function makeLocalUser(email: string): LocalUser {
-  const now = new Date().toISOString()
-  // Stable id derived from the email so re-signing-in returns the same user.
-  const id = 'local-' + Array.from(email).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0).toString(36).replace('-', 'x')
-  return {
-    id,
-    email,
-    verified: true,
-    email_validated_at: now,
-    is_admin: false,
-    created: now,
-    updated: now,
-  }
-}
-
-function isEmailVerified(user: LocalUser | null): boolean {
-  return !!user && user.verified === true
+function isEmailVerified(user: AuthUser | null): boolean {
+  return !!user && (user.verified === true || user.email_validated_at.length > 0)
 }
 
 export function useAuth() {
-  const user = useState<LocalUser | null>('auth-user', () => loadLocalUser())
+  const user = useState<AuthUser | null>('auth-user', () => loadCachedUser())
   const loading = useState<boolean>('auth-loading', () => false)
+  const refreshStarted = useState<boolean>('auth-refresh-started', () => false)
 
   const isAuthed = computed(() => !!user.value?.id)
   const isVerified = computed(() => isEmailVerified(user.value))
 
-  async function requestOtp(email: string): Promise<{ otpId: string }> {
-    // Local stub: pretend we sent an OTP. The next step accepts any code.
+  async function refreshUser(): Promise<AuthUser | null> {
+    loading.value = true
+    try {
+      const res = await $fetch<{ user: AuthUser | null }>('/api/auth/me')
+      user.value = res.user
+      saveCachedUser(res.user)
+      return res.user
+    }
+    catch {
+      user.value = null
+      saveCachedUser(null)
+      return null
+    }
+    finally {
+      loading.value = false
+    }
+  }
+
+  if (import.meta.client && !refreshStarted.value) {
+    refreshStarted.value = true
+    void refreshUser()
+  }
+
+  async function requestOtp(email: string): Promise<OtpRequestResponse> {
     const trimmed = email.trim()
     if (!trimmed) throw new Error('Enter your email address.')
-    return { otpId: `local:${trimmed}` }
+    return await $fetch<OtpRequestResponse>('/api/auth/otp/request', {
+      method: 'POST',
+      body: { email: trimmed },
+    })
   }
 
-  async function authWithOtp(otpId: string, _code: string) {
-    const email = otpId.startsWith('local:') ? otpId.slice('local:'.length) : otpId
-    const u = makeLocalUser(email)
-    saveLocalUser(u)
-    user.value = u
-    return { record: u, token: 'local-token' }
+  async function authWithOtp(otpId: string, code: string): Promise<AuthResponse> {
+    const res = await $fetch<AuthResponse>('/api/auth/otp/verify', {
+      method: 'POST',
+      body: { otpId, code },
+    })
+    user.value = res.user
+    saveCachedUser(res.user)
+    return res
   }
 
-  // Convenience for "instant sign-in" flows that want to skip the OTP screen entirely.
-  async function signInLocal(email: string) {
-    const u = makeLocalUser(email.trim())
-    saveLocalUser(u)
-    user.value = u
-    return u
-  }
-
-  async function requestVerification(_email: string) {
-    // Already verified locally — no-op.
-    return true
+  async function requestVerification(email: string) {
+    return await requestOtp(email)
   }
 
   async function signOut() {
-    saveLocalUser(null)
-    user.value = null
-    await navigateTo('/')
+    try {
+      await $fetch('/api/auth/logout', { method: 'POST' })
+    }
+    finally {
+      saveCachedUser(null)
+      user.value = null
+      await navigateTo('/')
+    }
   }
 
   return {
@@ -97,9 +102,9 @@ export function useAuth() {
     loading,
     isAuthed,
     isVerified,
+    refreshUser,
     requestOtp,
     authWithOtp,
-    signInLocal,
     requestVerification,
     signOut,
   }

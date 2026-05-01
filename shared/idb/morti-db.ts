@@ -1,4 +1,5 @@
-// IndexedDB adapter — db: madera, version 6, 8 stores.
+// IndexedDB adapter. The on-disk db name stays as the original legacy value so
+// existing local projects survive the Morti rename.
 // Stores match the spec: projects, designState, designUpdates, designSeq,
 // projectEditorState, designUndoCheckpoints, designUndoState, publishPreviewVideo.
 

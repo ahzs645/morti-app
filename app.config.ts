@@ -3,7 +3,7 @@ export default defineAppConfig({
     colors: {
       primary: 'amber',
       neutral: 'stone',
-      success: 'madera',
+      success: 'morti',
     },
     modal: {
       variants: {

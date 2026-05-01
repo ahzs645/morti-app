@@ -1,17 +1,17 @@
 // Render lifecycle constants — must match the values used in the postMessage protocol.
 export const RENDER_MESSAGES = {
-  READY: 'madera-render-ready',
-  PROGRESS: 'madera-render-progress',
-  DONE: 'madera-render-done',
-  ERROR: 'madera-render-error',
+  READY: 'morti-render-ready',
+  PROGRESS: 'morti-render-progress',
+  DONE: 'morti-render-done',
+  ERROR: 'morti-render-error',
 } as const
 
 export type RenderMessageType = (typeof RENDER_MESSAGES)[keyof typeof RENDER_MESSAGES]
 
-export interface RenderReadyMessage { type: typeof RENDER_MESSAGES.READY }
-export interface RenderProgressMessage { type: typeof RENDER_MESSAGES.PROGRESS, progress: number }
-export interface RenderDoneMessage { type: typeof RENDER_MESSAGES.DONE, buffer: ArrayBuffer }
-export interface RenderErrorMessage { type: typeof RENDER_MESSAGES.ERROR, message: string }
+export interface RenderReadyMessage { type: typeof RENDER_MESSAGES.READY, renderId?: string }
+export interface RenderProgressMessage { type: typeof RENDER_MESSAGES.PROGRESS, progress: number, renderId?: string }
+export interface RenderDoneMessage { type: typeof RENDER_MESSAGES.DONE, buffer: ArrayBuffer, renderId?: string }
+export interface RenderErrorMessage { type: typeof RENDER_MESSAGES.ERROR, message: string, renderId?: string }
 
 export type RenderMessage =
   | RenderReadyMessage

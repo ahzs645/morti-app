@@ -54,12 +54,19 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    databaseUrl: process.env.DATABASE_URL || '',
+    authSecret: process.env.AUTH_SECRET || process.env.NUXT_AUTH_SECRET || '',
+    postmarkServerToken: process.env.POSTMARK_SERVER_TOKEN || '',
+    postmarkFromEmail: process.env.POSTMARK_FROM_EMAIL || '',
+    postmarkMessageStream: process.env.POSTMARK_MESSAGE_STREAM || 'outbound',
+    appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
     public: {
-      pocketbaseUrl: 'https://api.madera.app',
+      appBaseUrl: process.env.NUXT_PUBLIC_APP_BASE_URL || process.env.APP_BASE_URL || '',
       posthogKey: 'phc_A6uepvw77fYmapESpFBiwr6Utk3WPaKtzpByTehZbpkL',
-      posthogHost: 'https://e.madera.app',
+      posthogHost: 'https://e.morti.app',
       posthogUiHost: 'https://eu.posthog.com',
       posthogDebug: false,
+      appName: 'Morti',
       features: {
         projectStyleTab: false,
       },

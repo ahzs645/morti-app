@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: morti
+      POSTGRES_USER: morti
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - morti_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U morti -d morti"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgres://morti:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/morti
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN:?set POSTMARK_SERVER_TOKEN}
+      POSTMARK_FROM_EMAIL: ${POSTMARK_FROM_EMAIL:?set POSTMARK_FROM_EMAIL}
+      POSTMARK_MESSAGE_STREAM: ${POSTMARK_MESSAGE_STREAM:-outbound}
+      APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL}
+      NUXT_PUBLIC_APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL}
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  morti_postgres_data:

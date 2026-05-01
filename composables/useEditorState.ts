@@ -1,6 +1,6 @@
 import type { CameraState, ProjectEditorStateRow } from '~~/shared/domain/types'
 import { DEFAULT_CAMERA_STATE, normalizePublicStyle } from '~~/shared/domain/defaults'
-import { STORES, idbGet, idbPut } from '~~/shared/idb/madera-db'
+import { STORES, idbGet, idbPut } from '~~/shared/idb/morti-db'
 
 const PERSIST_DEBOUNCE_MS = 450
 

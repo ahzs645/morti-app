@@ -111,7 +111,7 @@ async function loadDemos() {
     demoPreviewMap.value = Object.fromEntries(previews)
   }
   catch (err: unknown) {
-    demoError.value = (err as { message?: string } | null)?.message ?? 'Could not load demos. Is PocketBase running?'
+    demoError.value = (err as { message?: string } | null)?.message ?? 'Could not load demos.'
   }
   finally {
     demoLoading.value = false
@@ -178,8 +178,8 @@ async function importProject(event: Event) {
   if (!file) return
   importError.value = ''
   try {
-    if (!file.name.toLowerCase().endsWith('.madera')) throw new Error('Choose a .madera file.')
-    const row = await local.importMaderaFile(file, file.name.replace(/\.madera$/i, ''))
+    if (!/\.(morti|madera)$/i.test(file.name)) throw new Error('Choose a .morti file.')
+    const row = await local.importMortiFile(file, file.name.replace(/\.(morti|madera)$/i, ''))
     await navigateTo(`/project/${row.id}`)
   }
   catch (err: unknown) {
@@ -278,7 +278,7 @@ function isDemo(projectId: string): boolean {
     <div class="pointer-events-none absolute left-3 top-3 z-30 sm:left-4 sm:top-4">
       <img
         src="/favicon.svg"
-        alt="Madera"
+        alt="Morti"
         width="10"
         height="10"
         decoding="async"
@@ -335,7 +335,7 @@ function isDemo(projectId: string): boolean {
             </template>
             <template v-else>
               <h1 class="text-2xl font-semibold text-highlighted sm:text-3xl">
-                Madera
+                Morti
               </h1>
               <p class="text-sm text-muted">
                 Simple furniture builder
@@ -479,7 +479,7 @@ function isDemo(projectId: string): boolean {
           v-else-if="demos.length === 0"
           class="rounded-lg border border-default bg-elevated/30 px-4 py-8 text-center text-sm text-muted"
         >
-          No demo projects yet. Add some in PocketBase (demo + public + published snapshot).
+          No demo projects yet.
         </p>
         <div
           v-else
@@ -533,7 +533,7 @@ function isDemo(projectId: string): boolean {
     <input
       ref="importInputRef"
       type="file"
-      accept=".madera,application/octet-stream"
+      accept=".morti,application/octet-stream"
       class="sr-only"
       @change="importProject"
     >

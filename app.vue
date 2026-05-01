@@ -6,10 +6,10 @@ useHead({
 })
 
 useSeoMeta({
-  title: 'Madera',
-  description: 'Design furniture locally with collaborative-ready Yjs projects.',
-  ogTitle: 'Madera',
-  ogDescription: 'Design furniture locally with collaborative-ready Yjs projects.',
+  title: 'Morti',
+  description: 'Design furniture with cloud sync, publishing, and shareable Yjs projects.',
+  ogTitle: 'Morti',
+  ogDescription: 'Design furniture with cloud sync, publishing, and shareable Yjs projects.',
   twitterCard: 'summary',
 })
 </script>

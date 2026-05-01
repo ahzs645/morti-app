@@ -39,7 +39,7 @@ const FIT_PADDING = 1.12 // `Lh`
 const MIN_FIT_DISTANCE = 8 // `te.designerOrbitMinDistanceM`
 
 /**
- * Configure an OrbitControls instance with the Madera defaults.
+ * Configure an OrbitControls instance with the Morti defaults.
  * Note: zoom is intentionally disabled — wheel zoom is handled externally
  * via `applyWheelZoom(...)` so we can clamp the distance ratio.
  */
