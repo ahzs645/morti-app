@@ -165,9 +165,9 @@ function formatMm(value: number): string {
       <article
         v-for="group in visiblePanelGroups"
         :key="group.key"
-        class="flex cursor-pointer flex-col overflow-hidden rounded-lg bg-default transition-shadow"
+        class="flex cursor-pointer flex-col overflow-hidden rounded-lg bg-default shadow-sm transition-[box-shadow,transform] active:scale-[0.99]"
         :class="[
-          isSelectedGroup(group) ? 'ring-2 ring-primary' : 'ring-1 ring-default',
+          isSelectedGroup(group) ? 'ring-2 ring-primary' : '',
           isShowingSelectedPanel ? 'min-h-0 flex-1' : '',
         ]"
         role="button"
@@ -190,22 +190,22 @@ function formatMm(value: number): string {
 
         <div class="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
           <div class="flex min-w-0 flex-1 items-start gap-2">
-            <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-300 text-[10px] font-bold leading-none tracking-tight text-neutral-900">
+            <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-elevated text-[10px] font-bold leading-none tracking-tight tabular-nums text-highlighted">
               {{ group.groupId }}
             </span>
             <div
               v-if="isShowingSelectedPanel"
               class="min-w-0 flex-1"
             >
-              <div class="truncate text-xs font-semibold text-highlighted">
+              <div class="truncate text-balance text-xs font-semibold text-highlighted">
                 {{ group.representative.role }}
               </div>
-              <div class="truncate text-xs text-muted">
+              <div class="truncate text-xs tabular-nums text-muted">
                 {{ formatMm(group.width) }} × {{ formatMm(group.height) }} × {{ formatMm(group.thickness) }} mm
               </div>
             </div>
           </div>
-          <div class="shrink-0 rounded-full bg-muted/60 px-2 py-0.5 text-xs font-semibold text-highlighted">
+          <div class="shrink-0 rounded-full bg-elevated px-2 py-0.5 text-xs font-semibold tabular-nums text-highlighted">
             ×{{ group.quantity }}
           </div>
         </div>

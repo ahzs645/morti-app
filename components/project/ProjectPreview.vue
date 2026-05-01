@@ -140,7 +140,7 @@ function moduleClass(mod: FurnitureModule): string {
 </script>
 
 <template>
-  <div class="flex items-center justify-center overflow-hidden rounded-md bg-[var(--ui-bg-muted)] p-2 ring ring-default">
+  <div class="flex items-center justify-center overflow-hidden rounded-md bg-muted p-2 shadow-sm ring-1 ring-default/60 tabular-nums">
     <div
       v-if="columns.length > 0"
       class="flex w-max items-end justify-center"
@@ -254,7 +254,7 @@ function moduleClass(mod: FurnitureModule): string {
 
     <div
       v-else
-      class="flex h-full w-full items-center justify-center text-xs text-muted"
+      class="flex h-full w-full items-center justify-center text-balance text-xs text-muted"
     >
       Empty project
     </div>

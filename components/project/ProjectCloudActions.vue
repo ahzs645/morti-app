@@ -47,7 +47,7 @@ function onUnpublished() {
     <div class="flex max-w-full flex-row flex-wrap items-center justify-end gap-2">
       <div
         v-if="props.draftSyncStatus === 'error'"
-        class="flex flex-wrap items-center justify-end gap-0.5 rounded-full border border-default bg-muted p-1 shadow-sm backdrop-blur"
+        class="flex flex-wrap items-center justify-end gap-0.5 rounded-full bg-muted p-1 shadow-md ring-1 ring-default/60 backdrop-blur"
       >
         <UButton
           size="xs"
@@ -55,7 +55,7 @@ function onUnpublished() {
           variant="ghost"
           icon="i-lucide-refresh-cw"
           label="Retry"
-          class="h-8 shrink-0 rounded-full px-2.5"
+          class="h-10 min-h-10 shrink-0 rounded-full px-3 transition-transform active:scale-[0.97]"
           @click="emit('retryDraftSync')"
         />
       </div>
@@ -65,7 +65,7 @@ function onUnpublished() {
         variant="solid"
         icon="i-lucide-square-arrow-up"
         :label="isPublished ? 'Published' : 'Publish'"
-        class="h-8 min-h-8 shrink-0 rounded-full px-3 text-xs font-semibold shadow-sm"
+        class="h-10 min-h-10 shrink-0 rounded-full px-4 text-xs font-semibold shadow-md transition-transform active:scale-[0.97]"
         @click="open = true"
       />
     </div>

@@ -48,12 +48,12 @@ async function onSignOut() {
 
 <template>
   <div class="flex h-full w-full items-center justify-center px-4 py-8">
-    <div class="flex w-full max-w-md flex-col gap-4 rounded-2xl border border-default bg-default p-6 shadow-xl">
+    <div class="flex w-full max-w-md flex-col gap-4 rounded-2xl bg-default p-6 shadow-xl ring-1 ring-default/60 sm:p-8">
       <div class="flex flex-col gap-1">
-        <h2 class="text-lg font-semibold text-highlighted">
+        <h2 class="text-balance text-lg font-semibold text-highlighted">
           Verify your email
         </h2>
-        <p class="text-sm text-muted">
+        <p class="text-pretty text-sm leading-relaxed text-muted">
           We sent a verification code to
           <span class="font-medium text-highlighted">{{ user?.email ?? 'your email' }}</span>.
           You need to verify your email before you can sync to the cloud or publish projects.
@@ -80,7 +80,7 @@ async function onSignOut() {
           icon="i-lucide-mail"
           :loading="sending"
           :disabled="refreshing"
-          class="justify-center"
+          class="min-h-10 justify-center transition-transform active:scale-[0.97]"
           @click="onResend"
         />
         <UButton
@@ -90,7 +90,7 @@ async function onSignOut() {
           icon="i-lucide-refresh-cw"
           :loading="refreshing"
           :disabled="sending"
-          class="justify-center"
+          class="min-h-10 justify-center transition-transform active:scale-[0.97]"
           @click="onAlreadyVerified"
         />
       </div>
@@ -101,7 +101,7 @@ async function onSignOut() {
         variant="ghost"
         size="sm"
         icon="i-lucide-log-out"
-        class="self-start"
+        class="min-h-10 self-start transition-transform active:scale-[0.97]"
         :disabled="sending || refreshing"
         @click="onSignOut"
       />

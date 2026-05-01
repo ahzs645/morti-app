@@ -106,6 +106,7 @@ function resendCode() {
             type="email"
             autocomplete="email"
             class="w-full"
+            :ui="{ base: 'min-h-10' }"
             placeholder="you@example.com"
             @keydown.enter.prevent="submitEmail"
           />
@@ -113,7 +114,7 @@ function resendCode() {
       </template>
 
       <template v-else>
-        <p class="text-sm text-muted">
+        <p class="text-pretty text-sm text-muted">
           We sent a code to
           <span class="font-medium text-highlighted">{{ email.trim() }}</span>.
         </p>
@@ -127,6 +128,7 @@ function resendCode() {
             inputmode="numeric"
             autocomplete="one-time-code"
             class="w-full"
+            :ui="{ base: 'min-h-10 tabular-nums tracking-widest' }"
             placeholder="123456"
             @keydown.enter.prevent="submitCode"
           />
@@ -147,21 +149,21 @@ function resendCode() {
           label="Cancel"
           color="neutral"
           variant="outline"
-          class="w-full min-w-0 justify-center"
+          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :disabled="loading"
           @click="close()"
         />
         <UButton
           v-if="step === 'email'"
           label="Send code"
-          class="w-full min-w-0 justify-center"
+          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="loading"
           @click="submitEmail"
         />
         <UButton
           v-else
           label="Sign in"
-          class="w-full min-w-0 justify-center"
+          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="loading"
           @click="submitCode"
         />

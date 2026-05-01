@@ -543,7 +543,7 @@ if (getCurrentScope()) {
 </script>
 
 <template>
-  <div class="designer-root relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg ring ring-default">
+  <div class="designer-root relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg shadow-sm ring-1 ring-default/60">
     <ProjectDesignerFrontView
       :columns="columns"
       :config="config"
@@ -562,32 +562,32 @@ if (getCurrentScope()) {
       @update:zoom-percent="(v: number) => emit('update:zoomPercent', v)"
     />
 
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-3 pt-10">
-      <div class="pointer-events-auto flex max-h-[min(16rem,42vh)] w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-xl bg-default shadow-lg ring ring-default">
-        <div class="inspector-root grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[var(--ui-bg-muted)]">
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-2 pb-2 pt-10 sm:px-3 sm:pb-3">
+      <div class="pointer-events-auto flex max-h-[min(16rem,42vh)] w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-xl bg-elevated shadow-lg ring-1 ring-default/60">
+        <div class="inspector-root grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-muted">
           <div
             v-if="visibleIssues.length > 0"
-            class="border-b border-default/50 px-4 py-3"
+            class="px-3 py-3 sm:px-4"
           >
             <div class="grid auto-rows-auto gap-2">
               <div
                 v-for="issue in visibleIssues"
                 :key="issue.moduleId != null ? `${issue.moduleId}:${issue.code}` : issue.code"
-                class="rounded-md border px-3 py-2 text-xs"
-                :class="issue.severity === 'error' ? 'border-error/30 bg-error/10 text-error' : 'border-warning/30 bg-warning/10 text-warning'"
+                class="text-pretty rounded-lg px-3 py-2 text-xs shadow-sm"
+                :class="issue.severity === 'error' ? 'bg-error/10 text-error' : 'bg-warning/10 text-warning'"
               >
                 {{ issue.message }}
               </div>
             </div>
           </div>
 
-          <div class="min-h-0 overflow-auto p-4">
+          <div class="min-h-0 overflow-auto p-3 sm:p-4">
             <div
               v-if="selectedCount > 0"
               class="grid gap-3"
             >
-              <article class="grid gap-3 rounded-md bg-default p-3 text-sm ring ring-default">
-                <h2 class="font-medium text-highlighted">
+              <article class="grid gap-3 rounded-lg bg-default p-3 text-sm shadow-sm">
+                <h2 class="text-balance font-medium text-highlighted tabular-nums">
                   {{ selectedCount }} selected
                 </h2>
 
@@ -615,7 +615,7 @@ if (getCurrentScope()) {
                         :value="selectedColumnWidthValue"
                         type="text"
                         inputmode="decimal"
-                        class="w-full min-w-0 rounded border border-default bg-default px-2 py-1 text-xs text-highlighted outline-none ring-0 focus:border-primary"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
                         placeholder="mixed"
                         aria-label="Column width for selected modules in meters"
                         @keydown.enter.prevent="onSelectedColumnWidthCommit"
@@ -634,7 +634,7 @@ if (getCurrentScope()) {
                         :value="selectedHeightValue"
                         type="text"
                         inputmode="decimal"
-                        class="w-full min-w-0 rounded border border-default bg-default px-2 py-1 text-xs text-highlighted outline-none ring-0 focus:border-primary"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
                         placeholder="mixed"
                         aria-label="Selected modules height in meters"
                         @keydown.enter.prevent="onSelectedHeightCommit"
@@ -653,7 +653,7 @@ if (getCurrentScope()) {
                         :value="selectedDrawerCountValue"
                         type="text"
                         inputmode="numeric"
-                        class="w-full min-w-0 rounded border border-default bg-default px-2 py-1 text-xs text-highlighted outline-none ring-0 focus:border-primary"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
                         placeholder="mixed"
                         aria-label="Number of drawers in selected modules"
                         @keydown.enter.prevent="onSelectedDrawerCountCommit"
@@ -671,7 +671,7 @@ if (getCurrentScope()) {
                   label="Delete module"
                   size="xs"
                   variant="soft"
-                  class="justify-self-stretch"
+                  class="justify-self-stretch active:scale-[0.97] transition-transform duration-150"
                   @click="removeSelectedModule(selectedModuleInfos[0].columnIndex, selectedModuleInfos[0].moduleIndex)"
                 />
               </article>
@@ -682,17 +682,17 @@ if (getCurrentScope()) {
               class="grid min-h-0 min-w-0"
             >
               <div
-                class="relative min-h-0 min-w-0"
+                class="relative min-h-0 min-w-0 cursor-pointer active:scale-[0.97] transition-transform duration-150"
                 @click="settingsOpen = true"
               >
                 <div class="grid min-w-0 grid-cols-3 gap-2 pt-1 h-40">
                   <article
                     v-for="field in summaryConfigFields"
                     :key="field.key"
-                    class="min-w-0 rounded-lg border border-default bg-default px-2 py-2.5 ring ring-default/60 sm:px-3 flex flex-col"
+                    class="min-w-0 rounded-lg bg-default px-2 py-2.5 shadow-sm sm:px-3 flex flex-col"
                   >
                     <div class="flex min-w-0 flex-col gap-2 p-2 justify-center flex-1">
-                      <h3 class="min-w-0 text-[0.7rem] font-medium leading-snug tracking-wide text-muted">
+                      <h3 class="min-w-0 text-balance text-[0.7rem] font-medium leading-snug tracking-wide text-muted">
                         {{ summaryLabel(field) }} ({{ field.unit }})
                       </h3>
                       <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0 pb-2">
@@ -717,6 +717,7 @@ if (getCurrentScope()) {
                       color="neutral"
                       variant="ghost"
                       aria-label="Reset project settings to defaults"
+                      class="active:scale-[0.97] transition-transform duration-150"
                       @click="resetConfig"
                     />
                     <UButton
@@ -726,6 +727,7 @@ if (getCurrentScope()) {
                       color="neutral"
                       variant="soft"
                       aria-label="Copy project settings as JSON"
+                      class="active:scale-[0.97] transition-transform duration-150"
                       @click="copyConfigJson"
                     />
                   </div>
@@ -744,12 +746,12 @@ if (getCurrentScope()) {
                         >
                           <button
                             type="button"
-                            class="config-help-icon"
+                            class="config-help-icon active:scale-[0.97] transition-transform duration-150"
                             :aria-label="`${field.label} help`"
                           >
                             <UIcon
                               name="i-lucide-circle-help"
-                              class="h-3.5 w-3.5"
+                              class="size-3.5"
                             />
                           </button>
                         </UTooltip>
@@ -760,7 +762,7 @@ if (getCurrentScope()) {
                             :value="formatConfigValue(field)"
                             type="text"
                             inputmode="decimal"
-                            class="w-20 rounded border border-default bg-default px-2 py-1 text-right text-xs text-highlighted outline-none ring-0 focus:border-primary"
+                            class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
                             :aria-label="`${field.label} (${field.unit})`"
                             @keydown.enter.prevent="commitConfigField(field, $event)"
                             @blur="commitConfigField(field, $event)"
@@ -776,7 +778,7 @@ if (getCurrentScope()) {
                       label="Done"
                       color="neutral"
                       variant="outline"
-                      class="w-full min-w-0 justify-center"
+                      class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
                       @click="close()"
                     />
                   </template>

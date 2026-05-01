@@ -351,7 +351,7 @@ async function unpublishProject() {
         v-if="isPublished"
         class="flex flex-col items-center gap-3"
       >
-        <div class="relative aspect-square w-full max-w-[min(100%,20rem)] overflow-hidden rounded-lg border border-default bg-muted">
+        <div class="relative aspect-square w-full max-w-[min(100%,20rem)] overflow-hidden rounded-xl bg-muted shadow-md ring-1 ring-default/60">
           <video
             v-if="previewVideoUrl"
             :src="previewVideoUrl"
@@ -378,7 +378,7 @@ async function unpublishProject() {
           </div>
           <div
             v-else-if="previewLoading"
-            class="absolute inset-0 flex items-center justify-center bg-muted px-3 text-center text-xs text-muted"
+            class="absolute inset-0 flex items-center justify-center bg-muted px-3 text-center text-pretty text-xs text-muted"
           >
             Loading preview...
           </div>
@@ -388,7 +388,7 @@ async function unpublishProject() {
           :label="mp4ActionLabel"
           color="neutral"
           variant="outline"
-          class="w-full max-w-[min(100%,20rem)] justify-center"
+          class="w-full min-h-10 max-w-[min(100%,20rem)] justify-center transition-transform active:scale-[0.97]"
           :loading="isRendering"
           :disabled="isRendering"
           @click="onPreviewVideoAction"
@@ -423,7 +423,7 @@ async function unpublishProject() {
             :label="copiedFlash ? 'Copied' : 'Copy public link'"
             color="neutral"
             variant="soft"
-            class="w-full min-w-0 justify-center sm:flex-1"
+            class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97] sm:flex-1"
             @click="copyPublicLink"
           />
           <UButton
@@ -431,7 +431,7 @@ async function unpublishProject() {
             label="Unpublish"
             color="neutral"
             variant="outline"
-            class="w-full min-w-0 justify-center sm:flex-1"
+            class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97] sm:flex-1"
             @click="confirmUnpublishOpen = true"
           />
         </div>
@@ -447,14 +447,14 @@ async function unpublishProject() {
           label="Close"
           color="neutral"
           variant="outline"
-          class="w-full min-w-0 justify-center"
+          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :disabled="publishing || unpublishing"
           @click="close()"
         />
         <UButton
           v-if="!isPublished"
           label="Publish"
-          class="w-full min-w-0 justify-center"
+          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="publishing"
           :disabled="unpublishing"
           @click="publishProject"

@@ -45,12 +45,12 @@ function primary() {
             :label="props.cancelLabel"
             color="neutral"
             variant="outline"
-            class="w-full min-w-0 justify-center"
+            class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
             @click="cancel"
           />
           <UButton
             :label="props.primaryLabel"
-            class="w-full min-w-0 justify-center"
+            class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
             @click="primary"
           />
         </div>

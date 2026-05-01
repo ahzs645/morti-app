@@ -38,7 +38,7 @@ function confirm() {
     <slot v-if="$slots.default" />
     <p
       v-else-if="props.message"
-      class="text-sm leading-relaxed text-muted"
+      class="text-pretty text-sm leading-relaxed text-muted"
     >
       {{ props.message }}
     </p>
@@ -49,13 +49,13 @@ function confirm() {
           :label="props.cancelLabel"
           color="neutral"
           variant="outline"
-          class="w-full min-w-0 justify-center"
+          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           @click="cancel"
         />
         <UButton
           :label="props.confirmLabel"
           :color="props.confirmColor"
-          class="w-full min-w-0 justify-center"
+          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           @click="confirm"
         />
       </div>

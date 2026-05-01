@@ -148,7 +148,7 @@ const ariaLabel = computed(() => `${props.spec.code} ${props.spec.name} model pr
 <template>
   <div
     ref="wrapperRef"
-    class="size-28 overflow-hidden rounded-md bg-default ring ring-default"
+    class="size-28 overflow-hidden rounded-md bg-default shadow-sm ring-1 ring-default/60"
     :aria-label="ariaLabel"
   >
     <canvas ref="canvasRef" class="block size-full" />

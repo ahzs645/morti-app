@@ -17,17 +17,17 @@ function formatDims(spec: HardwareSpec): string {
 </script>
 
 <template>
-  <UContainer class="py-10 sm:py-14">
+  <UContainer class="py-8 sm:py-14">
     <div class="w-full max-w-6xl">
-      <div class="mb-5 flex items-start justify-between gap-4">
+      <div class="mb-5 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-start sm:gap-4">
         <div>
           <p class="text-sm font-medium text-primary">
             Builder system
           </p>
-          <h1 class="mt-1 text-2xl font-semibold text-highlighted sm:text-3xl">
+          <h1 class="mt-1 text-2xl font-semibold text-balance text-highlighted sm:text-3xl">
             Hardware catalog
           </h1>
-          <p class="mt-2 max-w-2xl text-sm text-muted">
+          <p class="mt-2 max-w-2xl text-pretty text-sm text-muted">
             Reference hardware copied from the source furniture system. These items
             stay hidden during design and are used to produce hardware lists and
             future machining operations.
@@ -39,46 +39,47 @@ function formatDims(spec: HardwareSpec): string {
           label="Projects"
           color="neutral"
           variant="outline"
+          class="active:scale-[0.97] transition-transform"
         />
       </div>
 
-      <div class="overflow-hidden rounded-lg ring ring-default">
-        <table class="w-full min-w-[48rem] border-collapse text-sm">
+      <div class="overflow-x-auto rounded-xl shadow-sm ring ring-default">
+        <table class="w-full min-w-[48rem] border-collapse text-sm tabular-nums">
           <thead>
-            <tr class="bg-muted/60 text-left text-muted">
-              <th class="border border-default px-3 py-2 font-medium">Code</th>
-              <th class="border border-default px-3 py-2 font-medium">Drawing</th>
-              <th class="border border-default px-3 py-2 font-medium">Name</th>
-              <th class="border border-default px-3 py-2 font-medium">Kind</th>
-              <th class="border border-default px-3 py-2 font-medium">Dimensions</th>
-              <th class="border border-default px-3 py-2 font-medium">Included?</th>
-              <th class="border border-default px-3 py-2 font-medium">Notes</th>
-              <th class="border border-default px-3 py-2 font-medium">Technical</th>
-              <th class="border border-default px-3 py-2 font-medium">Buy</th>
+            <tr class="bg-muted text-left text-muted">
+              <th class="border-b border-default px-3 py-2 font-medium">Code</th>
+              <th class="border-b border-default px-3 py-2 font-medium">Drawing</th>
+              <th class="border-b border-default px-3 py-2 font-medium">Name</th>
+              <th class="border-b border-default px-3 py-2 font-medium">Kind</th>
+              <th class="border-b border-default px-3 py-2 font-medium">Dimensions</th>
+              <th class="border-b border-default px-3 py-2 font-medium">Included?</th>
+              <th class="border-b border-default px-3 py-2 font-medium">Notes</th>
+              <th class="border-b border-default px-3 py-2 font-medium">Technical</th>
+              <th class="border-b border-default px-3 py-2 font-medium">Buy</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="item in sortedHardware"
               :key="item.code"
-              class="odd:bg-default even:bg-muted/20"
+              class="odd:bg-default even:bg-muted/40"
             >
-              <td class="border border-default px-3 py-2 font-semibold text-highlighted">{{ item.code }}</td>
-              <td class="border border-default px-3 py-2">
+              <td class="border-b border-default px-3 py-2 font-semibold text-highlighted">{{ item.code }}</td>
+              <td class="border-b border-default px-3 py-2">
                 <HardwareDrawingCanvas :spec="item" />
               </td>
-              <td class="border border-default px-3 py-2 text-highlighted">{{ item.name }}</td>
-              <td class="border border-default px-3 py-2 text-muted">{{ item.kind }}</td>
-              <td class="border border-default px-3 py-2 text-highlighted">{{ formatDims(item) }}</td>
-              <td class="border border-default px-3 py-2">
+              <td class="border-b border-default px-3 py-2 text-highlighted">{{ item.name }}</td>
+              <td class="border-b border-default px-3 py-2 text-muted">{{ item.kind }}</td>
+              <td class="border-b border-default px-3 py-2 text-highlighted">{{ formatDims(item) }}</td>
+              <td class="border-b border-default px-3 py-2">
                 <UBadge
                   :color="item.included ? 'primary' : 'neutral'"
                   :label="item.included ? 'included' : 'excluded'"
                   variant="soft"
                 />
               </td>
-              <td class="border border-default px-3 py-2 text-muted">{{ item.notes ?? '—' }}</td>
-              <td class="border border-default px-3 py-2">
+              <td class="border-b border-default px-3 py-2 text-muted">{{ item.notes ?? '—' }}</td>
+              <td class="border-b border-default px-3 py-2">
                 <div v-if="item.links?.length" class="flex flex-wrap gap-1.5">
                   <a
                     v-for="link in item.links"
@@ -87,12 +88,12 @@ function formatDims(spec: HardwareSpec): string {
                     :title="link.label"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="rounded-full bg-muted px-2 py-1 text-xs font-medium text-highlighted ring ring-default transition hover:bg-elevated"
+                    class="rounded-full bg-muted px-2 py-1 text-xs font-medium text-highlighted shadow-sm transition-[background-color,transform] hover:bg-elevated active:scale-[0.97]"
                   >{{ link.label }}</a>
                 </div>
                 <span v-else class="text-muted">—</span>
               </td>
-              <td class="border border-default px-3 py-2">
+              <td class="border-b border-default px-3 py-2">
                 <div v-if="item.buyLinks?.length" class="flex flex-wrap gap-1.5">
                   <a
                     v-for="(link, i) in item.buyLinks"
@@ -102,7 +103,7 @@ function formatDims(spec: HardwareSpec): string {
                     :title="link.label"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="inline-flex size-6 items-center justify-center rounded-full bg-neutral-500 text-xs font-semibold text-[var(--ui-bg)] transition hover:bg-neutral-600"
+                    class="inline-flex size-7 items-center justify-center rounded-full bg-elevated text-xs font-semibold tabular-nums text-highlighted shadow-sm transition-[background-color,transform] hover:bg-accented active:scale-[0.97]"
                   >{{ i + 1 }}</a>
                 </div>
                 <span v-else class="text-muted">—</span>

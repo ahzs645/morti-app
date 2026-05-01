@@ -60,13 +60,14 @@ function selectCutlist() {
 <template>
   <div class="relative h-screen min-h-0 w-full overflow-hidden bg-default">
     <div
-      class="absolute left-3 top-3 z-20 flex items-center gap-1 rounded-md bg-default/90 p-1 shadow-sm ring ring-default"
+      class="absolute left-2 top-2 z-20 flex items-center gap-1 rounded-lg bg-default/90 p-1 shadow-sm backdrop-blur ring ring-default sm:left-3 sm:top-3"
     >
       <UButton
         size="xs"
         :variant="mode === 'design' ? 'solid' : 'ghost'"
         color="neutral"
         label="Design"
+        class="active:scale-[0.97] transition-transform"
         @click="selectDesign"
       />
       <UButton
@@ -74,13 +75,14 @@ function selectCutlist() {
         :variant="mode === 'cutlist' ? 'solid' : 'ghost'"
         color="neutral"
         label="Cutlist"
+        class="active:scale-[0.97] transition-transform"
         @click="selectCutlist"
       />
     </div>
 
     <ClientOnly>
       <template #fallback>
-        <div class="flex h-screen w-full items-center justify-center border border-default">
+        <div class="flex h-screen w-full items-center justify-center bg-default">
           <UIcon
             name="i-lucide-loader-circle"
             class="size-8 animate-spin text-muted"

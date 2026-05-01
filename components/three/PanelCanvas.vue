@@ -255,7 +255,7 @@ const ariaLabel = computed(() => `Technical drawing for panel ${props.part.role}
 <template>
   <div
     ref="wrapperRef"
-    class="relative h-full min-h-0 w-full overflow-hidden bg-default"
+    class="relative h-full min-h-0 w-full overflow-hidden rounded-md bg-default shadow-sm ring-1 ring-default/60"
     :aria-label="ariaLabel"
   >
     <canvas ref="canvasRef" class="block h-full w-full" />

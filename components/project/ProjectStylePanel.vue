@@ -71,13 +71,13 @@ function resetActiveStyle() {
 </script>
 
 <template>
-  <div class="pointer-events-auto w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border border-default bg-muted/95 p-3 shadow-xl backdrop-blur">
+  <div class="pointer-events-auto w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl bg-muted/95 p-3 shadow-xl ring-1 ring-default/60 backdrop-blur">
     <div class="mb-3 flex items-center justify-between gap-3">
       <div>
         <p class="text-xs font-semibold uppercase tracking-wide text-muted">
           Public style
         </p>
-        <p class="text-sm font-semibold text-highlighted">
+        <p class="text-balance text-sm font-semibold text-highlighted">
           Canvas rendering
         </p>
       </div>
@@ -86,13 +86,13 @@ function resetActiveStyle() {
         color="neutral"
         variant="ghost"
         label="Reset"
-        class="rounded-full"
+        class="min-h-10 rounded-full transition-transform active:scale-[0.97]"
         @click="resetActiveStyle"
       />
     </div>
 
     <div
-      class="mb-3 flex rounded-full border border-default bg-default p-1"
+      class="mb-3 flex rounded-full bg-default p-1 shadow-sm ring-1 ring-default/60"
       role="group"
       aria-label="Rendering style"
     >
@@ -100,7 +100,7 @@ function resetActiveStyle() {
         size="xs"
         color="neutral"
         label="Technical"
-        class="h-8 flex-1 rounded-full"
+        class="h-10 min-h-10 flex-1 rounded-full transition-transform active:scale-[0.97]"
         :variant="style.renderStyle === 'technical' ? 'solid' : 'ghost'"
         @click="setRenderStyle('technical')"
       />
@@ -108,7 +108,7 @@ function resetActiveStyle() {
         size="xs"
         color="neutral"
         label="Rendered"
-        class="h-8 flex-1 rounded-full"
+        class="h-10 min-h-10 flex-1 rounded-full transition-transform active:scale-[0.97]"
         :variant="style.renderStyle === 'rendered' ? 'solid' : 'ghost'"
         @click="setRenderStyle('rendered')"
       />
@@ -118,11 +118,11 @@ function resetActiveStyle() {
       <label
         v-for="row in activeRows"
         :key="row.key"
-        class="flex items-center justify-between gap-3 rounded-xl border border-default bg-default px-2.5 py-2"
+        class="flex min-h-10 items-center justify-between gap-3 rounded-xl bg-default px-2.5 py-2 shadow-sm ring-1 ring-default/60"
       >
         <span class="min-w-0 truncate text-xs font-medium text-toned">{{ row.label }}</span>
         <span class="flex shrink-0 items-center gap-2">
-          <span class="font-mono text-[11px] text-muted">{{ row.value }}</span>
+          <span class="font-mono text-[11px] tabular-nums text-muted">{{ row.value }}</span>
           <input
             type="color"
             class="size-7 cursor-pointer rounded-md border border-default bg-transparent p-0"

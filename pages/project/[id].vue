@@ -572,7 +572,7 @@ const topChromeMaxWidth = computed(() => {
       <button
         v-else-if="project && viewMode === 'cutlist'"
         type="button"
-        class="fixed bottom-3 left-3 z-50 size-14 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:bottom-4 sm:left-4 sm:size-16"
+        class="fixed bottom-3 left-3 z-50 size-14 transition-transform hover:scale-105 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:bottom-4 sm:left-4 sm:size-16"
         aria-label="Show cutlist work-in-progress warning"
         @click="showCutlistWipAlert"
       >
@@ -586,16 +586,16 @@ const topChromeMaxWidth = computed(() => {
 
       <div
         v-if="showPublishedBanner"
-        class="pointer-events-auto fixed inset-x-0 top-18 z-20 flex flex-col gap-2 border-b border-default bg-warning px-4 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between px-8"
+        class="pointer-events-auto fixed inset-x-0 top-18 z-20 flex flex-col gap-2 bg-warning px-4 py-2.5 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-8"
       >
-        <p class="text-neutral-800">
-          <span class="font-bold text-neutral-800">Published</span> → changes here affect the public copy. Make a local copy to experiment separately.
+        <p class="text-pretty text-inverted">
+          <span class="font-bold">Published</span> changes here affect the public copy. Make a local copy to experiment separately.
         </p>
         <UButton
           size="sm"
           label="Make copy"
           icon="i-lucide-copy-plus"
-          class="shrink-0 self-start sm:self-auto"
+          class="shrink-0 self-start transition-transform active:scale-[0.97] sm:self-auto"
           @click="duplicateProject"
         />
       </div>
@@ -659,7 +659,7 @@ const topChromeMaxWidth = computed(() => {
             />
             <Suspense v-else>
               <template #fallback>
-                <div class="flex h-full items-center justify-center rounded-lg border border-default bg-default">
+                <div class="flex h-full items-center justify-center rounded-lg bg-default shadow-sm">
                   <UIcon
                     name="i-lucide-loader-circle"
                     class="size-6 animate-spin text-muted"
@@ -701,14 +701,15 @@ const topChromeMaxWidth = computed(() => {
 
           <div
             v-else
-            class="flex h-full flex-col items-center justify-center gap-4"
+            class="flex h-full flex-col items-center justify-center gap-4 px-4"
           >
-            <p class="text-muted">
+            <p class="text-pretty text-center text-muted">
               Project not found.
             </p>
             <UButton
               to="/"
               label="Back to projects"
+              class="transition-transform active:scale-[0.97]"
             />
             </div>
         </template>
@@ -720,18 +721,18 @@ const topChromeMaxWidth = computed(() => {
         class="pointer-events-none fixed left-3 top-3 z-30 flex flex-wrap items-start gap-2.5 sm:left-4 sm:top-4"
         :style="{ maxWidth: topChromeMaxWidth }"
       >
-        <div class="pointer-events-auto flex h-10 min-w-0 max-w-[min(20rem,calc(100vw-6rem))] items-center gap-2.5 rounded-full border border-default bg-muted px-3 shadow-sm">
+        <div class="pointer-events-auto flex h-10 min-w-0 max-w-[min(20rem,calc(100vw-6rem))] items-center gap-2.5 rounded-full bg-muted px-3 shadow-sm">
           <UButton
             to="/"
             variant="ghost"
             color="neutral"
             icon="i-lucide-arrow-left"
             size="sm"
-            class="shrink-0 text-muted opacity-55 transition-[opacity,color] hover:bg-transparent hover:text-highlighted hover:opacity-100"
+            class="shrink-0 text-muted opacity-55 transition-[opacity,color,transform] hover:bg-transparent hover:text-highlighted hover:opacity-100 active:scale-[0.97]"
             aria-label="Home"
           />
           <div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-            <h1 class="min-w-0 truncate text-sm font-semibold text-highlighted sm:text-base">
+            <h1 class="min-w-0 truncate text-balance text-sm font-semibold text-highlighted sm:text-base">
               {{ project.name }}
             </h1>
             <UDropdownMenu
@@ -744,20 +745,20 @@ const topChromeMaxWidth = computed(() => {
                 variant="ghost"
                 color="neutral"
                 size="sm"
-                class="shrink-0 text-muted opacity-55 transition-[opacity,color] hover:bg-transparent hover:text-highlighted hover:opacity-100"
+                class="shrink-0 text-muted opacity-55 transition-[opacity,color,transform] hover:bg-transparent hover:text-highlighted hover:opacity-100 active:scale-[0.97]"
                 aria-label="Project menu"
               />
             </UDropdownMenu>
           </div>
         </div>
 
-        <div class="pointer-events-auto flex h-10 shrink-0 items-center gap-1 rounded-full border border-default bg-muted px-1 shadow-sm">
+        <div class="pointer-events-auto flex h-10 shrink-0 items-center gap-1 rounded-full bg-muted px-1 shadow-sm">
           <UButton
             size="xs"
             :variant="viewMode === 'assembly' ? 'solid' : 'ghost'"
             color="neutral"
             label="Design"
-            class="h-8 rounded-full"
+            class="h-8 rounded-full transition-transform active:scale-[0.97]"
             @click="viewMode = 'assembly'"
           />
           <UButton
@@ -765,7 +766,7 @@ const topChromeMaxWidth = computed(() => {
             :variant="viewMode === 'cutlist' ? 'solid' : 'ghost'"
             color="neutral"
             label="Cutlist"
-            class="h-8 rounded-full"
+            class="h-8 rounded-full transition-transform active:scale-[0.97]"
             @click="viewMode = 'cutlist'"
           />
           <UButton
@@ -774,7 +775,7 @@ const topChromeMaxWidth = computed(() => {
             :variant="viewMode === 'style' ? 'solid' : 'ghost'"
             color="neutral"
             label="Style"
-            class="h-8 rounded-full"
+            class="h-8 rounded-full transition-transform active:scale-[0.97]"
             @click="viewMode = 'style'"
           />
         </div>
@@ -814,7 +815,7 @@ const topChromeMaxWidth = computed(() => {
         v-if="showVerifyOverlay"
         class="pointer-events-auto absolute inset-0 z-40 flex flex-col bg-default/95 backdrop-blur-md"
       >
-        <div class="pointer-events-auto flex shrink-0 items-center gap-2 border-b border-default px-4 py-3">
+        <div class="pointer-events-auto flex shrink-0 items-center gap-2 px-4 py-3 shadow-sm">
           <UButton
             to="/"
             variant="ghost"
@@ -822,6 +823,7 @@ const topChromeMaxWidth = computed(() => {
             icon="i-lucide-arrow-left"
             size="sm"
             label="Back to projects"
+            class="transition-transform active:scale-[0.97]"
           />
         </div>
         <VerifyEmailGate class="min-h-0 flex-1 overflow-auto" />

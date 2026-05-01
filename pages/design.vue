@@ -46,28 +46,28 @@ function toHex(num: number): string {
 
 <template>
   <UContainer class="py-8 sm:py-12">
-    <div class="mb-10">
-      <h1 class="text-3xl font-bold tracking-tight text-highlighted sm:text-4xl">
+    <div class="mb-8 sm:mb-10">
+      <h1 class="text-3xl font-bold tracking-tight text-balance text-highlighted sm:text-4xl">
         Design system
       </h1>
-      <p class="mt-2 max-w-2xl text-muted">
+      <p class="mt-2 max-w-2xl text-pretty text-muted">
         Use this page while tuning Nuxt UI.
       </p>
     </div>
 
-    <div class="flex flex-col gap-10">
+    <div class="flex flex-col gap-6 sm:gap-10">
       <!-- 1. Typography -->
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold text-highlighted">
+          <h2 class="text-balance text-lg font-semibold text-highlighted">
             Typography
           </h2>
         </template>
         <div class="space-y-3">
-          <h1 class="text-4xl font-bold text-highlighted">
+          <h1 class="text-4xl font-bold text-balance text-highlighted">
             Heading 1
           </h1>
-          <h2 class="text-3xl font-bold text-highlighted">
+          <h2 class="text-3xl font-bold text-balance text-highlighted">
             Heading 2
           </h2>
           <h3 class="text-2xl font-semibold text-highlighted">
@@ -82,10 +82,10 @@ function toHex(num: number): string {
           <h6 class="text-base font-semibold text-highlighted">
             Heading 6
           </h6>
-          <p class="text-default">
+          <p class="text-pretty text-default">
             Body paragraph copy. The quick brown fox jumps over the lazy dog.
           </p>
-          <p class="text-muted">
+          <p class="text-pretty text-muted">
             Muted secondary text — for descriptions and supporting copy.
           </p>
           <p class="text-sm text-dimmed">
@@ -103,7 +103,7 @@ function toHex(num: number): string {
       <!-- 2. Theme colors -->
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold text-highlighted">
+          <h2 class="text-balance text-lg font-semibold text-highlighted">
             Theme colors
           </h2>
         </template>
@@ -119,10 +119,10 @@ function toHex(num: number): string {
               <div
                 v-for="tok in grp.items"
                 :key="tok.name"
-                class="rounded-lg border border-default bg-elevated p-3"
+                class="rounded-xl bg-elevated p-3 shadow-sm"
               >
                 <div
-                  class="mb-2 h-11 w-full rounded-md border border-default ring-1 ring-inset ring-black/5 dark:ring-white/10"
+                  class="mb-2 h-11 w-full rounded-lg ring-1 ring-inset ring-default"
                   :style="{ backgroundColor: `var(${tok.cssVar})` }"
                 />
                 <p class="font-medium text-highlighted">
@@ -131,7 +131,7 @@ function toHex(num: number): string {
                 <p class="mt-1 break-all font-mono text-[11px] leading-snug text-muted">
                   var({{ tok.cssVar }})
                 </p>
-                <p class="mt-1 font-mono text-[11px] text-dimmed">
+                <p class="mt-1 font-mono text-[11px] tabular-nums text-dimmed">
                   {{ toHex(tok.current.hex) }} · {{ tok.current.rgbCss }}
                 </p>
               </div>
@@ -143,7 +143,7 @@ function toHex(num: number): string {
       <!-- 3. Buttons -->
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold text-highlighted">
+          <h2 class="text-balance text-lg font-semibold text-highlighted">
             Buttons
           </h2>
         </template>
@@ -199,7 +199,7 @@ function toHex(num: number): string {
       <!-- 4. Inputs & controls -->
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold text-highlighted">
+          <h2 class="text-balance text-lg font-semibold text-highlighted">
             Inputs &amp; controls
           </h2>
         </template>
@@ -262,7 +262,7 @@ function toHex(num: number): string {
       <!-- 5. Modal & slideover -->
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold text-highlighted">
+          <h2 class="text-balance text-lg font-semibold text-highlighted">
             Modal &amp; slideover
           </h2>
         </template>
@@ -284,7 +284,7 @@ function toHex(num: number): string {
           title="Delete project?"
           description="This removes the project from this device. This action cannot be undone."
         >
-          <p class="text-sm text-muted">
+          <p class="text-pretty text-sm text-muted">
             Optional body copy with more detail.
           </p>
           <template #footer="{ close }">
@@ -311,7 +311,7 @@ function toHex(num: number): string {
           side="right"
         >
           <template #body>
-            <p class="text-sm text-muted">
+            <p class="text-pretty text-sm text-muted">
               Slideover content goes here — dimensions, materials, export options, etc.
             </p>
           </template>
@@ -328,7 +328,7 @@ function toHex(num: number): string {
       <!-- 6. Badges -->
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold text-highlighted">
+          <h2 class="text-balance text-lg font-semibold text-highlighted">
             Badges
           </h2>
         </template>
@@ -357,7 +357,7 @@ function toHex(num: number): string {
       <!-- 7. Alerts -->
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold text-highlighted">
+          <h2 class="text-balance text-lg font-semibold text-highlighted">
             Alerts
           </h2>
         </template>
@@ -392,7 +392,7 @@ function toHex(num: number): string {
       <!-- 8. Card layout -->
       <UCard>
         <template #header>
-          <h2 class="text-lg font-semibold text-highlighted">
+          <h2 class="text-balance text-lg font-semibold text-highlighted">
             Card layout
           </h2>
         </template>
@@ -407,7 +407,7 @@ function toHex(num: number): string {
               />
             </div>
           </template>
-          <p class="text-sm text-muted">
+          <p class="text-pretty text-sm text-muted">
             Typical header / body / footer structure for project summaries or settings blocks.
           </p>
           <template #footer>

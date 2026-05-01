@@ -44,7 +44,7 @@ const pxPerMeter = computed<number>(() => Al * (clampedZoom.value / 100))
 
 const selectedSet = computed<Set<string>>(() => new Set(props.selectedModuleIds))
 const anySelected = computed<boolean>(() => selectedSet.value.size > 0)
-const selectedFillClass = computed<string>(() => anySelected.value ? 'bg-white opacity-30' : 'bg-primary')
+const selectedFillClass = computed<string>(() => anySelected.value ? 'bg-inverted opacity-30' : 'bg-primary')
 
 function isSelected(moduleId: string): boolean {
   return selectedSet.value.has(moduleId)
@@ -58,7 +58,7 @@ function moduleClass(mod: FurnitureModule): string {
     return 'module-shelf'
   }
   if (!anySelected.value || moduleIsSelected) return 'bg-primary'
-  return 'bg-white opacity-10 ring ring-default/60 hover:opacity-10'
+  return 'bg-inverted opacity-10 ring ring-default/60 hover:opacity-10'
 }
 
 function meterToPx(m: number): number {
@@ -327,7 +327,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
           <button
             type="button"
             aria-label="Add column on the left"
-            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             :style="columns.length > 0 ? { marginTop: addButtonMarginTop(0) } : undefined"
             @click.stop="emit('add-column-left')"
           >
@@ -367,7 +367,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                   >
                     <button
                       type="button"
-                      class="mx-auto flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      class="mx-auto flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                       :style="{ marginBottom: `${Bt}px` }"
                       :aria-label="`Add module on top of column ${ci + 1}`"
                       @click.stop="emit('add-module-top', ci)"
@@ -397,7 +397,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                       >
                         <button
                           type="button"
-                          class="relative block w-full shrink-0 text-left outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-default"
+                          class="relative block w-full shrink-0 text-left outline-none transition-[opacity,transform,background-color] duration-150 hover:opacity-90 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-default"
                           :class="moduleClass(mod)"
                           :style="{ height: px(mod.height) }"
                           :aria-label="`${mod.type} module, height ${formatMeasurement(mod.height)} meters`"
@@ -500,7 +500,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
 
             <div
               v-if="columns.length > 0"
-              class="mt-2 flex w-max items-center border-t border-default pt-2"
+              class="mt-2 flex w-max items-center border-t border-muted pt-2"
               :style="{ columnGap: metaGap(), paddingLeft: metaGap(), paddingRight: metaGap() }"
             >
               <div
@@ -511,11 +511,11 @@ function addButtonMarginTop(boundaryIndex: number): string {
               >
                 <button
                   type="button"
-                  class="group relative inline-flex items-center text-xs text-muted"
+                  class="group relative inline-flex items-center text-xs text-muted transition-transform active:scale-[0.97]"
                   :aria-label="`Remove column ${columnLetter(ci)}`"
                   @click.stop="emit('remove-column', ci)"
                 >
-                  <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral-500 text-xs font-bold text-[var(--ui-bg)] transition-colors group-hover:bg-neutral-600">
+                  <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-accented text-xs font-bold text-inverted transition-colors group-hover:bg-elevated">
                     <span class="group-hover:hidden">{{ columnLetter(ci) }}</span>
                     <UIcon
                       name="i-lucide-trash-2"
@@ -523,7 +523,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                     />
                   </span>
                 </button>
-                <p class="text-xs font-semibold text-muted">
+                <p class="text-xs font-semibold tabular-nums text-muted">
                   {{ formatMeasurement(col.width) }} m
                 </p>
               </div>
@@ -533,7 +533,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
           <button
             type="button"
             aria-label="Add column on the right"
-            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             :style="columns.length > 0 ? { marginTop: addButtonMarginTop(columns.length) } : undefined"
             @click.stop="emit('add-column-right')"
           >
@@ -555,7 +555,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
 }
 .module-shelf-dim {
   background-image: none;
-  border-color: #ffffff1a;
+  border-color: var(--ui-border-muted);
 }
 .module-shelf-selected,
 .module-shelf:hover {
@@ -570,8 +570,8 @@ function addButtonMarginTop(boundaryIndex: number): string {
 .module-shelf-dim:hover {
   background-image: repeating-linear-gradient(
     135deg,
-    hsla(0, 0%, 100%, 0.18),
-    hsla(0, 0%, 100%, 0.18) 6px,
+    var(--ui-border-muted),
+    var(--ui-border-muted) 6px,
     transparent 0,
     transparent 12px
   );

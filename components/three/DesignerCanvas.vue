@@ -1651,8 +1651,8 @@ defineExpose({ getCaptureCanvas, lockCaptureCamera, waitForCapturePaint })
 // ---------------------------------------------------------------------------
 const wrapperClass = computed(() =>
   props.headlessCapture
-    ? 'relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-none border-0 bg-default'
-    : 'relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-default bg-default',
+    ? 'relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-none bg-default'
+    : 'relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg bg-default shadow-sm ring-1 ring-default/60',
 )
 
 const wrapperStyle = computed(() => ({
@@ -1719,16 +1719,16 @@ watch(
     </div>
     <div
       v-if="!headlessCapture"
-      class="pointer-events-auto absolute bottom-4 right-4 z-10"
+      class="pointer-events-auto absolute bottom-3 right-3 z-10 sm:bottom-4 sm:right-4"
     >
       <div
         ref="gizmoWrapperRef"
-        class="shrink-0 overflow-hidden rounded-full border border-default shadow-sm"
+        class="shrink-0 overflow-hidden rounded-full shadow-md ring-1 ring-default/60"
         :style="{ width: `${GIZMO_SIZE_PX}px`, height: `${GIZMO_SIZE_PX}px`, backgroundColor: gizmoBackground }"
       >
         <canvas
           ref="gizmoCanvasRef"
-          class="block h-full w-full cursor-pointer"
+          class="block h-full w-full cursor-pointer active:scale-[0.97] transition-transform duration-150"
         />
       </div>
     </div>
@@ -1739,7 +1739,7 @@ watch(
     >
       <div :class="chromeClass">
         <div
-          class="flex flex-row items-center gap-0.5 rounded-full border border-default bg-muted p-1 shadow-sm"
+          class="flex flex-row flex-wrap items-center gap-0.5 rounded-full bg-muted p-1 shadow-md ring-1 ring-default/60"
           role="group"
           aria-label="Assembly preview"
         >
@@ -1750,6 +1750,7 @@ watch(
             :variant="assemblyMode === 'normal' ? 'solid' : 'ghost'"
             aria-label="Normal assembly view"
             :aria-pressed="assemblyMode === 'normal'"
+            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('normal')"
           />
           <UButton
@@ -1759,6 +1760,7 @@ watch(
             :variant="assemblyMode === 'open-doors' ? 'solid' : 'ghost'"
             aria-label="Open doors and drawers preview"
             :aria-pressed="assemblyMode === 'open-doors'"
+            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('open-doors')"
           />
           <UButton
@@ -1768,11 +1770,12 @@ watch(
             :variant="assemblyMode === 'space-modules' ? 'solid' : 'ghost'"
             aria-label="Space modules view — pull panels apart"
             :aria-pressed="assemblyMode === 'space-modules'"
+            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('space-modules')"
           />
         </div>
         <div
-          class="flex rounded-full border border-default bg-muted p-1 shadow-sm"
+          class="flex flex-wrap rounded-full bg-muted p-1 shadow-md ring-1 ring-default/60"
           role="group"
           aria-label="Canvas render mode"
         >
@@ -1783,6 +1786,7 @@ watch(
             :variant="renderMode === 'technical' ? 'solid' : 'ghost'"
             aria-label="Technical drawing — outlines only"
             :aria-pressed="renderMode === 'technical'"
+            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
             @click="emit('update:renderMode', 'technical')"
           />
           <UButton
@@ -1792,6 +1796,7 @@ watch(
             :variant="renderMode === 'render-debug' ? 'solid' : 'ghost'"
             aria-label="Render debug — lit mesh with role colors"
             :aria-pressed="renderMode === 'render-debug'"
+            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
             @click="emit('update:renderMode', 'render-debug')"
           />
         </div>

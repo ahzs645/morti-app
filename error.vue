@@ -29,14 +29,35 @@ function handleReload() {
 </script>
 
 <template>
-  <div class="fixed inset-0 flex items-center justify-center p-6">
-    <UCard class="w-full max-w-md">
-      <div class="text-xs font-medium uppercase tracking-wider text-muted">{{ eyebrow }}</div>
-      <h1 class="mt-2 text-xl font-semibold text-highlighted">{{ heading }}</h1>
-      <p class="mt-2 text-sm text-muted">{{ description }}</p>
-      <div class="mt-6 flex gap-2">
-        <UButton color="primary" variant="solid" @click="handleHome">Home</UButton>
-        <UButton v-if="!isNotFound" color="neutral" variant="outline" @click="handleReload">Reload</UButton>
+  <div class="fixed inset-0 flex items-center justify-center bg-default p-4 sm:p-6">
+    <UCard class="w-full max-w-md shadow-md">
+      <div class="text-[0.6875rem] font-medium uppercase tracking-wider text-muted tabular-nums">
+        {{ eyebrow }}
+      </div>
+      <h1 class="mt-2 text-xl font-semibold text-highlighted text-balance sm:text-2xl">
+        {{ heading }}
+      </h1>
+      <p class="mt-2 text-sm text-muted text-pretty">
+        {{ description }}
+      </p>
+      <div class="mt-6 flex flex-wrap gap-2">
+        <UButton
+          color="primary"
+          variant="solid"
+          class="min-h-10 transition-transform duration-150 ease-out active:scale-[0.97]"
+          @click="handleHome"
+        >
+          Home
+        </UButton>
+        <UButton
+          v-if="!isNotFound"
+          color="neutral"
+          variant="outline"
+          class="min-h-10 transition-transform duration-150 ease-out active:scale-[0.97]"
+          @click="handleReload"
+        >
+          Reload
+        </UButton>
       </div>
     </UCard>
   </div>

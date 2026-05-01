@@ -88,22 +88,22 @@ onBeforeUnmount(() => {
   <div class="fixed inset-0 flex flex-col bg-default">
     <!-- Top-left back link -->
     <div class="absolute left-3 top-3 z-30 flex max-w-[calc(100vw-6rem)] flex-wrap items-center gap-2 sm:left-4 sm:top-4">
-      <div class="flex h-8 min-h-8 shrink-0 items-center justify-center rounded-full border border-default bg-muted p-0.5 shadow-sm">
+      <div class="flex h-10 min-h-10 shrink-0 items-center justify-center rounded-full bg-elevated p-1 shadow-md">
         <UButton
           to="/"
           variant="ghost"
           color="neutral"
           size="xs"
           icon="i-lucide-arrow-left"
-          class="size-7 shrink-0 justify-center rounded-full hover:bg-transparent"
+          class="size-8 min-h-8 shrink-0 justify-center rounded-full transition-transform duration-150 ease-out hover:bg-transparent active:scale-[0.97]"
           aria-label="Home"
         />
       </div>
       <div
         v-if="data?.record"
-        class="flex h-8 min-h-8 max-w-[min(20rem,calc(100vw-8rem))] items-center rounded-full border border-default bg-muted px-3 shadow-sm"
+        class="flex h-10 min-h-10 max-w-[min(20rem,calc(100vw-8rem))] items-center rounded-full bg-elevated px-4 shadow-md"
       >
-        <span class="truncate text-xs font-semibold text-highlighted">{{ data.record.name }}</span>
+        <span class="truncate text-xs font-semibold text-highlighted text-pretty">{{ data.record.name }}</span>
       </div>
     </div>
 
@@ -111,18 +111,18 @@ onBeforeUnmount(() => {
     <div class="relative min-h-0 flex-1">
       <div
         v-if="pending"
-        class="flex h-full items-center justify-center"
+        class="flex h-full items-center justify-center px-4"
       >
-        <p class="text-sm text-muted">
+        <p class="text-sm text-muted text-pretty">
           Loading…
         </p>
       </div>
 
       <div
         v-else-if="error"
-        class="flex h-full flex-col items-center justify-center gap-3 px-4 text-center"
+        class="flex h-full flex-col items-center justify-center gap-4 px-4 text-center"
       >
-        <p class="text-sm text-error">
+        <p class="max-w-sm text-sm text-error text-pretty">
           {{ error.statusMessage ?? error.message ?? 'Could not load this project.' }}
         </p>
         <UButton
@@ -130,6 +130,7 @@ onBeforeUnmount(() => {
           label="Home"
           color="neutral"
           variant="outline"
+          class="min-h-10 transition-transform duration-150 ease-out active:scale-[0.97]"
         />
       </div>
 
@@ -159,7 +160,7 @@ onBeforeUnmount(() => {
               color="neutral"
               variant="solid"
               size="xs"
-              class="h-8 min-h-8 shrink-0 rounded-full px-3 text-xs font-semibold shadow-sm"
+              class="h-10 min-h-10 shrink-0 rounded-full px-4 text-xs font-semibold shadow-md transition-transform duration-150 ease-out active:scale-[0.97]"
               :loading="remixLoading"
               @click="onRemixClick"
             />

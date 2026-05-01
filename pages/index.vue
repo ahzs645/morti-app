@@ -274,7 +274,7 @@ function isDemo(projectId: string): boolean {
 </script>
 
 <template>
-  <UContainer class="pb-10 pt-14 sm:pb-14 sm:pt-16">
+  <UContainer class="pb-10 pt-20 sm:pb-14 sm:pt-16">
     <div class="pointer-events-none absolute left-3 top-3 z-30 sm:left-4 sm:top-4">
       <img
         src="/favicon.svg"
@@ -296,7 +296,7 @@ function isDemo(projectId: string): boolean {
         variant="ghost"
         size="sm"
         icon="i-lucide-log-out"
-        class="pointer-events-auto shrink-0 text-muted opacity-80 transition-opacity hover:opacity-100"
+        class="pointer-events-auto shrink-0 text-muted opacity-80 transition-[opacity,transform] hover:opacity-100 active:scale-[0.97]"
         @click="signOut"
       />
     </div>
@@ -308,33 +308,33 @@ function isDemo(projectId: string): boolean {
         label="Sign in"
         color="neutral"
         icon="i-lucide-log-in"
-        class="pointer-events-auto shrink-0"
+        class="pointer-events-auto shrink-0 transition-transform active:scale-[0.97]"
         @click="authModalOpen = true"
       />
     </div>
 
     <div class="w-full max-w-6xl">
       <div class="sticky top-0 z-20 mb-4 -mx-[max(1rem,calc((100vw-100%)/2))] bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/80">
-        <div class="mx-auto flex w-full max-w-6xl min-w-0 flex-wrap items-start justify-between gap-3 px-6 py-3">
-          <div class="flex min-w-0 flex-col gap-y-1 sm:flex-row sm:items-baseline sm:gap-x-3">
+        <div class="mx-auto flex w-full max-w-6xl min-w-0 flex-col items-stretch justify-between gap-3 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6">
+          <div class="flex min-w-0 flex-row flex-wrap items-baseline gap-x-3 gap-y-1">
             <template v-if="isSignedIn">
               <button
                 type="button"
-                :class="['text-left text-2xl font-semibold transition-colors sm:text-3xl', demoMode ? 'text-muted/45 hover:text-muted' : 'text-highlighted']"
+                :class="['text-balance text-left text-2xl font-semibold transition-[color,transform] active:scale-[0.97] sm:text-3xl', demoMode ? 'text-muted/45 hover:text-muted' : 'text-highlighted']"
                 @click="demoMode = false"
               >
                 Projects
               </button>
               <button
                 type="button"
-                :class="['text-left text-2xl font-semibold transition-colors sm:text-3xl', demoMode ? 'text-highlighted' : 'text-muted/45 hover:text-muted']"
+                :class="['text-balance text-left text-2xl font-semibold transition-[color,transform] active:scale-[0.97] sm:text-3xl', demoMode ? 'text-highlighted' : 'text-muted/45 hover:text-muted']"
                 @click="toggleDemos"
               >
                 Demos
               </button>
             </template>
             <template v-else>
-              <h1 class="text-2xl font-semibold text-highlighted sm:text-3xl">
+              <h1 class="text-balance text-2xl font-semibold text-highlighted sm:text-3xl">
                 Morti
               </h1>
               <p class="text-sm text-muted">
@@ -350,12 +350,14 @@ function isDemo(projectId: string): boolean {
                 label="Import"
                 color="neutral"
                 variant="outline"
+                class="transition-transform active:scale-[0.97]"
                 @click="triggerImport"
               />
               <UButton
                 icon="i-lucide-plus"
                 label="New project"
                 color="neutral"
+                class="transition-transform active:scale-[0.97]"
                 @click="createProject"
               />
             </template>
@@ -380,7 +382,7 @@ function isDemo(projectId: string): boolean {
 
       <div
         v-if="loading"
-        class="flex justify-center py-12"
+        class="flex items-center justify-center py-16 animate-pulse"
       >
         <UIcon
           name="i-lucide-loader-circle"
@@ -389,17 +391,30 @@ function isDemo(projectId: string): boolean {
       </div>
 
       <template v-else-if="showProjects">
-        <p
+        <div
           v-if="!demoMode && localProjects.length === 0"
-          class="rounded-lg border border-default bg-elevated/30 px-4 py-8 text-center text-sm text-muted"
+          class="flex flex-col items-center gap-3 rounded-2xl bg-elevated/40 px-6 py-12 text-center shadow-sm ring-1 ring-default/60"
         >
-          No projects yet. Create one to get started.
-        </p>
+          <UIcon
+            name="i-lucide-package-open"
+            class="size-8 text-muted"
+          />
+          <p class="text-pretty text-sm text-muted">
+            No projects yet. Create one to get started.
+          </p>
+          <UButton
+            icon="i-lucide-plus"
+            label="New project"
+            color="neutral"
+            class="transition-transform active:scale-[0.97]"
+            @click="createProject"
+          />
+        </div>
 
         <template v-else-if="demoMode">
           <div
             v-if="demoLoading"
-            class="flex justify-center py-12"
+            class="flex items-center justify-center py-16 animate-pulse"
           >
             <UIcon
               name="i-lucide-loader-circle"
@@ -415,13 +430,13 @@ function isDemo(projectId: string): boolean {
           />
           <p
             v-else-if="demos.length === 0"
-            class="rounded-lg border border-default bg-elevated/30 px-4 py-8 text-center text-sm text-muted"
+            class="rounded-2xl bg-elevated/40 px-6 py-12 text-center text-sm text-muted shadow-sm ring-1 ring-default/60"
           >
             No demo projects yet.
           </p>
           <div
             v-else
-            class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+            class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 [&_time]:tabular-nums"
           >
             <ProjectCard
               v-for="project in cardDemos"
@@ -438,7 +453,7 @@ function isDemo(projectId: string): boolean {
 
         <div
           v-else
-          class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+          class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 [&_time]:tabular-nums"
         >
           <ProjectCard
             v-for="project in localProjects"
@@ -461,7 +476,7 @@ function isDemo(projectId: string): boolean {
       <template v-else>
         <div
           v-if="demoLoading"
-          class="flex justify-center py-12"
+          class="flex items-center justify-center py-16 animate-pulse"
         >
           <UIcon
             name="i-lucide-loader-circle"
@@ -477,13 +492,13 @@ function isDemo(projectId: string): boolean {
         />
         <p
           v-else-if="demos.length === 0"
-          class="rounded-lg border border-default bg-elevated/30 px-4 py-8 text-center text-sm text-muted"
+          class="rounded-2xl bg-elevated/40 px-6 py-12 text-center text-sm text-muted shadow-sm ring-1 ring-default/60"
         >
           No demo projects yet.
         </p>
         <div
           v-else
-          class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+          class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 [&_time]:tabular-nums"
         >
           <ProjectCard
             v-for="project in cardDemos"

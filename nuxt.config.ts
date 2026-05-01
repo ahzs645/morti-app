@@ -84,6 +84,7 @@ export default defineNuxtConfig({
 
   experimental: {
     payloadExtraction: false,
+    viteEnvironmentApi: true,
   },
 
   compatibilityDate: '2025-01-01',

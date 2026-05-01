@@ -235,7 +235,7 @@ onBeforeUnmount(() => {
     </div>
     <p
       v-else-if="errorMessage"
-      class="p-2 text-xs text-error"
+      class="p-3 text-xs text-error text-pretty"
     >
       {{ errorMessage }}
     </p>

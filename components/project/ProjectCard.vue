@@ -85,12 +85,12 @@ const menuItems = computed(() => [
 
 <template>
   <UCard
-    class="relative cursor-pointer overflow-hidden"
+    class="relative cursor-pointer overflow-hidden shadow-sm transition-transform active:scale-[0.99]"
     :ui="{ body: 'relative p-4 sm:p-5' }"
   >
     <NuxtLink
       :to="projectTo"
-      class="absolute inset-0 z-0 block rounded-[inherit] outline-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-inset after:ring-transparent after:transition after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-primary"
+      class="absolute inset-0 z-0 block rounded-[inherit] outline-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-inset after:ring-transparent after:transition-shadow after:duration-150 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-primary"
       :aria-labelledby="cardTitleId"
     />
 
@@ -128,13 +128,13 @@ const menuItems = computed(() => [
         <div class="min-w-0 flex-1">
           <h2
             :id="cardTitleId"
-            class="truncate font-semibold text-highlighted"
+            class="truncate text-balance font-semibold text-highlighted"
           >
             {{ project.name }}
           </h2>
           <p
             v-if="showDate && formattedDate"
-            class="text-sm text-muted"
+            class="text-sm tabular-nums text-muted"
           >
             {{ formattedDate }}
           </p>
@@ -149,7 +149,7 @@ const menuItems = computed(() => [
             :color="isPinned ? 'primary' : 'neutral'"
             variant="ghost"
             size="sm"
-            class="opacity-100"
+            class="opacity-100 transition-transform active:scale-[0.97]"
             :aria-label="isPinned ? 'Unpin project' : 'Pin project'"
             :aria-pressed="isPinned"
             @click.stop.prevent="emit('togglePin', project.id)"
@@ -164,6 +164,7 @@ const menuItems = computed(() => [
               color="neutral"
               variant="ghost"
               size="sm"
+              class="transition-transform active:scale-[0.97]"
               aria-label="Project actions"
             />
           </UDropdownMenu>

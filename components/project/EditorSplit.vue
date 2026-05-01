@@ -129,13 +129,18 @@ const previewStyle = computed(() => {
 <style scoped>
 .editor-split {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   height: 100dvh;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   background-color: var(--ui-bg);
+}
+@media (min-width: 768px) {
+  .editor-split {
+    flex-direction: row;
+  }
 }
 .editor-split.is-dragging {
   cursor: col-resize;
@@ -170,12 +175,23 @@ const previewStyle = computed(() => {
   align-items: center;
   justify-content: center;
   flex: 0 0 9px;
-  cursor: col-resize;
+  cursor: row-resize;
   z-index: 10;
   background-color: var(--ui-bg);
-  border-left: 1px solid var(--ui-border);
-  border-right: 1px solid var(--ui-border);
+  border-top: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
+  border-left: 0;
+  border-right: 0;
   transition: background-color 0.15s;
+}
+@media (min-width: 768px) {
+  .divider {
+    cursor: col-resize;
+    border-top: 0;
+    border-bottom: 0;
+    border-left: 1px solid var(--ui-border);
+    border-right: 1px solid var(--ui-border);
+  }
 }
 .divider.divider-locked {
   cursor: default;
@@ -186,12 +202,18 @@ const previewStyle = computed(() => {
   background-color: var(--ui-bg-elevated);
 }
 .divider-handle {
-  width: 3px;
-  height: 32px;
+  width: 32px;
+  height: 3px;
   border-radius: 9999px;
   background-color: var(--ui-border-accented);
   pointer-events: none;
   transition: background-color 0.15s;
+}
+@media (min-width: 768px) {
+  .divider-handle {
+    width: 3px;
+    height: 32px;
+  }
 }
 .divider:hover:not(.divider-locked) .divider-handle,
 .is-dragging .divider:not(.divider-locked) .divider-handle {

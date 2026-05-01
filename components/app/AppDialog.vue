@@ -10,8 +10,12 @@ const open = defineModel<boolean>('open', { required: true })
 const slots = useSlots()
 
 const ui = {
-  content: '!max-w-sm',
+  content: '!max-w-[calc(100vw-1rem)] sm:!max-w-sm rounded-2xl shadow-2xl',
+  header: 'p-4 sm:p-5',
+  body: 'p-4 sm:p-5',
   footer: 'flex flex-col gap-0 p-4 sm:px-5',
+  title: 'text-balance',
+  description: 'text-pretty',
 }
 </script>
 

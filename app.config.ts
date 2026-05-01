@@ -1,16 +1,19 @@
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: 'amber',
-      neutral: 'stone',
-      success: 'morti',
+      primary: 'morti',
+      neutral: 'morti',
+      success: 'green',
+      warning: 'amber',
+      error: 'red',
+      info: 'blue',
     },
     modal: {
       variants: {
         transition: {
           true: {
-            overlay: 'data-[state=open]:animate-[fade-in_120ms_ease-out] data-[state=closed]:animate-[fade-out_120ms_ease-in]',
-            content: 'data-[state=open]:animate-[scale-in_120ms_ease-out] data-[state=closed]:animate-[scale-out_120ms_ease-in]',
+            overlay: 'data-[state=open]:animate-[morti-fade-in_140ms_ease-out] data-[state=closed]:animate-[morti-fade-in_120ms_ease-in_reverse]',
+            content: 'data-[state=open]:animate-[morti-rise-in_180ms_cubic-bezier(0.2,0,0,1)] data-[state=closed]:animate-[morti-rise-out_140ms_cubic-bezier(0.2,0,0,1)]',
           },
         },
       },
