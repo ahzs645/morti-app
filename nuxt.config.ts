@@ -1,0 +1,83 @@
+// https://nuxt.com/docs/api/configuration/nuxt-config
+export default defineNuxtConfig({
+  ssr: false,
+  devtools: { enabled: true },
+
+  modules: [
+    '@nuxt/ui',
+    '@nuxt/icon',
+    '@nuxt/fonts',
+    '@nuxtjs/color-mode',
+  ],
+
+  css: ['~/assets/css/main.css'],
+
+  components: [
+    { path: '~/components', pathPrefix: false },
+  ],
+
+  app: {
+    head: {
+      htmlAttrs: { lang: 'en' },
+      meta: [
+        { charset: 'utf-8' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      ],
+      link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+    },
+  },
+
+  colorMode: {
+    preference: 'dark',
+    fallback: 'dark',
+    classSuffix: '',
+    storageKey: 'nuxt-color-mode',
+  },
+
+  icon: {
+    mode: 'css',
+    provider: 'server',
+    cssLayer: 'base',
+  },
+
+  fonts: {
+    families: [
+      { name: 'Public Sans', provider: 'google', weights: [400, 500, 600, 700], styles: ['normal', 'italic'] },
+    ],
+  },
+
+  routeRules: {
+    '/': { ssr: false },
+    '/p/**': { ssr: false },
+    '/project/**': { ssr: false },
+    '/render/**': { ssr: false },
+  },
+
+  runtimeConfig: {
+    public: {
+      pocketbaseUrl: 'https://api.madera.app',
+      posthogKey: 'phc_A6uepvw77fYmapESpFBiwr6Utk3WPaKtzpByTehZbpkL',
+      posthogHost: 'https://e.madera.app',
+      posthogUiHost: 'https://eu.posthog.com',
+      posthogDebug: false,
+      features: {
+        projectStyleTab: false,
+      },
+      three: {
+        maxTextureDimension: 16384,
+        clearColor: 0,
+        maxFps: 120,
+      },
+    },
+  },
+
+  vite: {
+    optimizeDeps: { include: ['three', 'yjs'] },
+  },
+
+  experimental: {
+    payloadExtraction: false,
+  },
+
+  compatibilityDate: '2025-01-01',
+})
