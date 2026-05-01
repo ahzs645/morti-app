@@ -573,8 +573,8 @@ if (getCurrentScope()) {
               <div
                 v-for="issue in visibleIssues"
                 :key="issue.moduleId != null ? `${issue.moduleId}:${issue.code}` : issue.code"
-                class="text-pretty rounded-lg px-3 py-2 text-xs shadow-sm"
-                :class="issue.severity === 'error' ? 'bg-error/10 text-error' : 'bg-warning/10 text-warning'"
+                class="text-pretty rounded-lg px-3 py-2 text-xs shadow-sm ring-1"
+                :class="issue.severity === 'error' ? 'bg-error/10 text-error ring-error/20' : 'bg-elevated text-default ring-default/60'"
               >
                 {{ issue.message }}
               </div>
@@ -696,7 +696,7 @@ if (getCurrentScope()) {
                         {{ summaryLabel(field) }} ({{ field.unit }})
                       </h3>
                       <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0 pb-2">
-                        <span class="text-[3rem] font-extralight tabular-nums leading-none tracking-[-0.1em] text-warning">
+                        <span class="text-[3rem] font-extralight tabular-nums leading-none tracking-[-0.1em] text-highlighted">
                           {{ formatConfigValue(field) }}
                         </span>
                       </div>

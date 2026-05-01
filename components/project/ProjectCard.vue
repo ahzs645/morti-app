@@ -108,18 +108,18 @@ const menuItems = computed(() => [
           <UBadge
             v-if="published"
             label="Published"
-            color="warning"
+            color="neutral"
             variant="solid"
             size="sm"
-            class="shadow-sm"
+            class="bg-default/85 text-highlighted shadow-sm ring-1 ring-default/60 backdrop-blur"
           />
           <UBadge
             v-if="demo"
             label="Demo"
-            color="primary"
+            color="neutral"
             variant="solid"
             size="sm"
-            class="shadow-sm"
+            class="bg-default/85 text-highlighted shadow-sm ring-1 ring-default/60 backdrop-blur"
           />
         </div>
       </div>

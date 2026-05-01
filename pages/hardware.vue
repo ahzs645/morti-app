@@ -21,7 +21,7 @@ function formatDims(spec: HardwareSpec): string {
     <div class="w-full max-w-6xl">
       <div class="mb-5 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-start sm:gap-4">
         <div>
-          <p class="text-sm font-medium text-primary">
+          <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-muted">
             Builder system
           </p>
           <h1 class="mt-1 text-2xl font-semibold text-balance text-highlighted sm:text-3xl">

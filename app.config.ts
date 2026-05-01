@@ -4,9 +4,9 @@ export default defineAppConfig({
       primary: 'morti',
       neutral: 'morti',
       success: 'green',
-      warning: 'amber',
+      warning: 'morti',
       error: 'red',
-      info: 'blue',
+      info: 'morti',
     },
     modal: {
       variants: {

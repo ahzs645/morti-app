@@ -586,13 +586,15 @@ const topChromeMaxWidth = computed(() => {
 
       <div
         v-if="showPublishedBanner"
-        class="pointer-events-auto fixed inset-x-0 top-18 z-20 flex flex-col gap-2 bg-warning px-4 py-2.5 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-8"
+        class="pointer-events-auto fixed inset-x-0 top-18 z-20 flex flex-col gap-2 bg-elevated px-4 py-2.5 text-sm shadow-sm ring-1 ring-default/60 sm:flex-row sm:items-center sm:justify-between sm:px-8"
       >
-        <p class="text-pretty text-inverted">
-          <span class="font-bold">Published</span> changes here affect the public copy. Make a local copy to experiment separately.
+        <p class="text-pretty text-default">
+          <span class="font-medium text-highlighted">Published</span> — changes here affect the public copy. Make a local copy to experiment separately.
         </p>
         <UButton
           size="sm"
+          color="primary"
+          variant="soft"
           label="Make copy"
           icon="i-lucide-copy-plus"
           class="shrink-0 self-start transition-transform active:scale-[0.97] sm:self-auto"

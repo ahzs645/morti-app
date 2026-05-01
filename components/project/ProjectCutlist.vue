@@ -228,34 +228,34 @@ function stop() {}
           <tr
             v-for="row in panelRows"
             :key="row.key"
-            :class="['cursor-pointer transition-colors', isSelectedRow(row) ? 'bg-primary' : 'odd:bg-default even:bg-muted/20 hover:bg-muted/50']"
+            :class="['cursor-pointer transition-colors', isSelectedRow(row) ? 'bg-primary/15' : 'odd:bg-default even:bg-muted/20 hover:bg-muted/50']"
             role="button"
             tabindex="0"
             @click="selectPanel(row)"
             @keydown.enter.prevent="selectPanel(row)"
             @keydown.space.prevent="selectPanel(row)"
           >
-            <td :class="['w-0 whitespace-nowrap border px-1 py-1.5 align-middle', isSelectedRow(row) ? 'border-accented/40' : 'border-default']">
+            <td :class="['w-0 whitespace-nowrap border px-1 py-1.5 align-middle', isSelectedRow(row) ? 'border-primary/30' : 'border-default']">
               <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-elevated text-[10px] font-bold leading-none tracking-tight tabular-nums text-highlighted">
                 {{ row.groupId }}
               </span>
             </td>
-            <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-accented/40 text-inverted' : 'border-default text-highlighted']">
+            <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ row.role }}
             </td>
-            <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-accented/40 text-inverted/90' : 'border-default text-muted']">
+            <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
               {{ row.orientation }}
             </td>
-            <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-accented/40 text-inverted' : 'border-default text-highlighted']">
+            <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ formatMetric(row.width) }}
             </td>
-            <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-accented/40 text-inverted' : 'border-default text-highlighted']">
+            <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ formatMetric(row.height) }}
             </td>
-            <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-accented/40 text-inverted' : 'border-default text-highlighted']">
+            <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ formatMetric(row.thickness) }}
             </td>
-            <td :class="['border px-2 py-1.5 font-semibold tabular-nums', isSelectedRow(row) ? 'border-accented/40 text-inverted' : 'border-default text-highlighted']">
+            <td :class="['border px-2 py-1.5 font-semibold tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ row.quantity }}
             </td>
           </tr>
