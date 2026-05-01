@@ -12,12 +12,10 @@ import { readFurnitureDoc } from '~~/shared/yjs/doc'
 interface Props {
   ydoc: Y.Doc
   selectedDrawingKey?: string | null
-  padForPublishedBanner?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   selectedDrawingKey: null,
-  padForPublishedBanner: false,
 })
 
 const emit = defineEmits<{
@@ -198,15 +196,14 @@ function stop() {}
 
 <template>
   <div
-    class="min-h-0 overflow-auto space-y-6"
-    :class="{ 'pt-34': props.padForPublishedBanner, 'pt-20': !props.padForPublishedBanner }"
+    class="min-h-0 overflow-auto space-y-6 pt-32 md:pt-20"
     @click="clearSelection"
   >
     <section @click.stop="stop">
       <h2 class="mb-2 text-balance text-sm font-semibold text-highlighted">
         Panel cutlist
       </h2>
-      <div class="-mx-1 overflow-x-auto px-1">
+      <div class="-mx-1 max-w-full overflow-x-auto px-1">
       <table class="w-full min-w-[32rem] border-collapse text-xs">
         <thead>
           <tr class="bg-muted/60 text-left text-muted">
@@ -276,7 +273,7 @@ function stop() {}
       <h2 class="mb-2 text-balance text-sm font-semibold text-highlighted">
         Machining operations
       </h2>
-      <div class="-mx-1 overflow-x-auto px-1">
+      <div class="-mx-1 max-w-full overflow-x-auto px-1">
       <table class="w-full min-w-[40rem] border-collapse text-xs">
         <thead>
           <tr class="bg-muted/60 text-left text-muted">

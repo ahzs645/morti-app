@@ -102,10 +102,17 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  min-width: 0;
 }
 
 body {
   font-feature-settings: "ss01", "cv11";
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+#__nuxt {
+  min-width: 0;
 }
 
 h1, h2, h3, h4 {

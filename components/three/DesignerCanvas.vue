@@ -35,7 +35,7 @@ const FIT_MULTIPLIER = 1.12
 const FRAME_LERP_TAU = 10
 const GIZMO_SIZE_PX = 80
 const GIZMO_CONTENT_SCALE = 1.12
-const DESIGNER_WHEEL_ZOOM_MAX_DISTANCE_RATIO = 2.75
+const DESIGNER_WHEEL_ZOOM_MAX_DISTANCE_RATIO = 4.5
 const DESIGNER_WHEEL_ZOOM_SENSITIVITY = 0.0011
 const GRID_FADE_OUT_SECONDS = 0.14
 const GRID_FADE_IN_SECONDS = 0.35
@@ -979,6 +979,7 @@ function tickAnimations(dt: number) {
 // ---------------------------------------------------------------------------
 
 let controls: OrbitControls | null = null
+let controlsDomElement: HTMLElement | null = null
 let cameraChangeTimer: number | null = null
 let wheelZoomDistanceRatio = 1
 let lastFitCenterY = 0
@@ -1020,8 +1021,10 @@ function onControlsChange() {
 }
 
 function attachControls() {
-  if (controls || !canvasRef.value) return
-  controls = new OrbitControls(camera, canvasRef.value)
+  const domElement = wrapperRef.value ?? canvasRef.value
+  if (controls || !domElement) return
+  controlsDomElement = domElement
+  controls = new OrbitControls(camera, domElement)
   controls.enableDamping = true
   controls.dampingFactor = 0.06
   controls.enablePan = false
@@ -1031,7 +1034,7 @@ function attachControls() {
   controls.target.set(0, 0, 0)
   controls.addEventListener('change', onControlsChange)
   controls.addEventListener('end', emitCameraChange)
-  canvasRef.value.addEventListener('wheel', onCanvasWheel, { passive: false })
+  controlsDomElement.addEventListener('wheel', onCanvasWheel, { passive: false })
   if (props.headlessCapture) controls.enabled = false
 }
 
@@ -1584,11 +1587,12 @@ onBeforeUnmount(() => {
   if (cameraChangeTimer !== null) window.clearTimeout(cameraChangeTimer)
   destroyViewHelper()
   if (controls) {
-    canvasRef.value?.removeEventListener('wheel', onCanvasWheel)
+    controlsDomElement?.removeEventListener('wheel', onCanvasWheel)
     controls.removeEventListener('change', onControlsChange)
     controls.removeEventListener('end', emitCameraChange)
     controls.dispose()
     controls = null
+    controlsDomElement = null
   }
   clearTracked()
 	  for (const c of dotsGroup.children) {
@@ -1652,7 +1656,7 @@ defineExpose({ getCaptureCanvas, lockCaptureCamera, waitForCapturePaint })
 const wrapperClass = computed(() =>
   props.headlessCapture
     ? 'relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-none bg-default'
-    : 'relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg bg-default shadow-sm ring-1 ring-default/60',
+    : 'relative flex h-full min-h-0 w-full cursor-grab touch-none select-none flex-col overflow-hidden rounded-lg bg-default shadow-sm ring-1 ring-default/60 active:cursor-grabbing',
 )
 
 const wrapperStyle = computed(() => ({
@@ -1666,7 +1670,7 @@ const chromeTeleportDisabled = computed(() => !chromeTeleportSelector.value || !
 const chromeClass = computed(() => [
   'flex flex-row flex-wrap items-center justify-end gap-1.5',
   chromeTeleportDisabled.value
-    ? 'pointer-events-auto absolute right-3 top-3 z-20 sm:right-4 sm:top-4'
+    ? 'pointer-events-auto absolute inset-x-3 top-16 z-20 md:inset-x-auto md:right-4 md:top-4'
     : 'pointer-events-auto',
 ])
 const gizmoBackground = computed(() => colors.value.backgroundMuted.rgbCss)
@@ -1725,10 +1729,12 @@ watch(
         ref="gizmoWrapperRef"
         class="shrink-0 overflow-hidden rounded-full shadow-md ring-1 ring-default/60"
         :style="{ width: `${GIZMO_SIZE_PX}px`, height: `${GIZMO_SIZE_PX}px`, backgroundColor: gizmoBackground }"
+        @pointerdown.stop
+        @wheel.stop
       >
         <canvas
           ref="gizmoCanvasRef"
-          class="block h-full w-full cursor-pointer active:scale-[0.97] transition-transform duration-150"
+          class="block h-full w-full cursor-grab transition-transform duration-150 active:scale-[0.97] active:cursor-grabbing"
         />
       </div>
     </div>
@@ -1737,7 +1743,11 @@ watch(
       :to="chromeTeleportTarget"
       :disabled="chromeTeleportDisabled"
     >
-      <div :class="chromeClass">
+      <div
+        :class="chromeClass"
+        @pointerdown.stop
+        @wheel.stop
+      >
         <div
           class="flex flex-row flex-wrap items-center gap-0.5 rounded-full bg-muted p-1 shadow-md ring-1 ring-default/60"
           role="group"

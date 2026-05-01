@@ -49,6 +49,7 @@ let loadSeq = 0
 // View mode + UI state — hydrated from editor state once it loads.
 const viewMode = ref<ViewMode>('assembly')
 const splitRatio = ref(0.55)
+const mobileSplitRatio = ref(0.42)
 const inputsCollapsed = ref(false)
 const cameraState = ref<CameraState | null>(null)
 const selectedModules = ref<{ id: string }[]>([])
@@ -71,16 +72,25 @@ const isPublished = computed<boolean>(() =>
   && cloudRecord.value.snapshot.length > 0,
 )
 const isDemo = computed<boolean>(() => cloudRecord.value?.is_demo === true)
-const showPublishedBanner = computed<boolean>(
+const isEditingPublishedCopy = computed<boolean>(
   () => isAuthed.value && isVerified.value && !!project.value && isPublished.value,
 )
-const padCutlistForPublishedBanner = computed<boolean>(
-  () => showPublishedBanner.value && viewMode.value === 'cutlist',
-)
-const activeSplitRatio = computed<number>(() => viewMode.value === 'cutlist' ? 0.5 : splitRatio.value)
+const isMobileViewport = ref(false)
+const MOBILE_ASSEMBLY_PREVIEW_RATIO = 0.42
+let mobileViewportQuery: MediaQueryList | null = null
+
+function updateMobileViewport() {
+  isMobileViewport.value = mobileViewportQuery?.matches ?? false
+}
+
 const collapseEditorInputs = computed<boolean>(
   () => (styleTabFlag.value && viewMode.value === 'style') || (inputsCollapsed.value && viewMode.value === 'assembly'),
 )
+const activeSplitRatio = computed<number>(() => {
+  if (viewMode.value === 'cutlist') return isMobileViewport.value ? 0.46 : 0.5
+  if (collapseEditorInputs.value) return 1
+  return isMobileViewport.value ? mobileSplitRatio.value : splitRatio.value
+})
 const canvasRenderMode = computed<'rendered' | 'render-debug' | 'technical'>(() =>
   styleTabFlag.value && viewMode.value === 'style'
     ? publicStyle.value.renderStyle === 'technical' ? 'technical' : 'render-debug'
@@ -143,6 +153,7 @@ function normalizeCameraState(value: unknown): CameraState {
 function resetEditorUi() {
   cameraState.value = cloneDefaultCameraState()
   splitRatio.value = 0.55
+  mobileSplitRatio.value = MOBILE_ASSEMBLY_PREVIEW_RATIO
   viewMode.value = 'assembly'
   inputsCollapsed.value = false
   selectedModules.value = []
@@ -232,7 +243,12 @@ async function loadProject(projectId: string) {
 
 // Bootstrap.
 onMounted(async () => {
-  if (import.meta.client) window.addEventListener('keydown', onKeydown)
+  if (import.meta.client) {
+    window.addEventListener('keydown', onKeydown)
+    mobileViewportQuery = window.matchMedia('(max-width: 767.98px)')
+    updateMobileViewport()
+    mobileViewportQuery.addEventListener('change', updateMobileViewport)
+  }
   if (import.meta.client) cutlistWipConfirmed.value = localStorage.getItem(CUTLIST_WIP_STORAGE_KEY) === 'true'
   await loadProject(id.value)
 })
@@ -383,6 +399,8 @@ function onKeydown(e: KeyboardEvent) {
 
 onBeforeUnmount(() => {
   if (import.meta.client) window.removeEventListener('keydown', onKeydown)
+  mobileViewportQuery?.removeEventListener('change', updateMobileViewport)
+  mobileViewportQuery = null
   if (cloudStyleSyncTimer) clearTimeout(cloudStyleSyncTimer)
   disposeProjectHandles()
 })
@@ -508,7 +526,9 @@ async function toggleDemo() {
 }
 
 function onSplitRatioUpdate(value: number) {
-  if (viewMode.value !== 'cutlist') splitRatio.value = value
+  if (viewMode.value === 'cutlist') return
+  if (isMobileViewport.value) mobileSplitRatio.value = value
+  else splitRatio.value = value
 }
 
 function confirmCutlistWipAlert() {
@@ -545,10 +565,15 @@ const topChromeMaxWidth = computed(() => {
   }
   return `min(40rem, calc((1 - ${activeSplitRatio.value}) * 100vw - 24px))`
 })
+const mobileActionTop = computed(() =>
+  collapseEditorInputs.value
+    ? '4rem'
+    : `calc((1 - ${activeSplitRatio.value}) * 100dvh + 0.75rem)`,
+)
 </script>
 
 <template>
-  <div class="relative h-[100dvh] min-h-0 w-full">
+  <div class="project-page relative h-[100dvh] min-h-0 w-full">
       <div
         v-if="project && viewMode === 'cutlist' && !cutlistWipConfirmed"
         class="fixed inset-0 z-[9999] flex h-[100dvh] w-screen cursor-pointer items-center justify-center overflow-hidden px-6 py-6 sm:px-8 sm:py-8"
@@ -584,24 +609,6 @@ const topChromeMaxWidth = computed(() => {
         >
       </button>
 
-      <div
-        v-if="showPublishedBanner"
-        class="pointer-events-auto fixed inset-x-0 top-18 z-20 flex flex-col gap-2 bg-elevated px-4 py-2.5 text-sm shadow-sm ring-1 ring-default/60 sm:flex-row sm:items-center sm:justify-between sm:px-8"
-      >
-        <p class="text-pretty text-default">
-          <span class="font-medium text-highlighted">Published</span> — changes here affect the public copy. Make a local copy to experiment separately.
-        </p>
-        <UButton
-          size="sm"
-          color="primary"
-          variant="soft"
-          label="Make copy"
-          icon="i-lucide-copy-plus"
-          class="shrink-0 self-start transition-transform active:scale-[0.97] sm:self-auto"
-          @click="duplicateProject"
-        />
-      </div>
-
       <EditorSplit
         :split-ratio="activeSplitRatio"
         :divider-locked="viewMode === 'cutlist'"
@@ -611,7 +618,8 @@ const topChromeMaxWidth = computed(() => {
         <!-- Inputs (left) pane -->
         <div
           v-if="project"
-          class="relative flex h-full min-h-0 flex-col overflow-hidden"
+          class="project-input-pane relative flex h-full min-h-0 flex-col overflow-hidden"
+          :class="{ 'project-input-pane--no-mobile-offset': viewMode !== 'assembly' }"
         >
           <ProjectDesigner
             v-if="!userNeedsEmailVerification && viewMode === 'assembly' && docRef"
@@ -626,8 +634,7 @@ const topChromeMaxWidth = computed(() => {
             v-else-if="!userNeedsEmailVerification && viewMode === 'cutlist' && docRef"
             v-model:selected-drawing-key="cutlistSelectedDrawingKey"
             :ydoc="(docRef as any)"
-            :pad-for-published-banner="padCutlistForPublishedBanner"
-            class="min-h-0 flex-1 px-5 pb-5"
+            class="min-h-0 flex-1 px-3 pb-3 sm:px-5 sm:pb-5"
           />
           <div
             v-else-if="!userNeedsEmailVerification && styleTabFlag && viewMode === 'style'"
@@ -694,7 +701,6 @@ const topChromeMaxWidth = computed(() => {
                   v-else-if="docRef && viewMode === 'cutlist'"
                   v-model:selected-drawing-key="cutlistSelectedDrawingKey"
                   :ydoc="(docRef as any)"
-                  :pad-for-published-banner="padCutlistForPublishedBanner"
                   class="h-full min-h-0 w-full"
                 />
               </div>
@@ -720,10 +726,10 @@ const topChromeMaxWidth = computed(() => {
       <!-- Top-left chrome: project menu + name + view-mode pill -->
       <div
         v-if="project"
-        class="pointer-events-none fixed left-3 top-3 z-30 flex flex-wrap items-start gap-2.5 sm:left-4 sm:top-4"
-        :style="{ maxWidth: topChromeMaxWidth }"
+        class="project-top-chrome pointer-events-none fixed inset-x-3 top-3 z-30 flex flex-nowrap items-start gap-2.5 md:inset-x-auto md:left-4 md:top-4"
+        :style="{ '--project-top-chrome-max-width': topChromeMaxWidth }"
       >
-        <div class="pointer-events-auto flex h-10 min-w-0 max-w-[min(20rem,calc(100vw-6rem))] items-center gap-2.5 rounded-full bg-muted px-3 shadow-sm">
+        <div class="pointer-events-auto flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-muted px-3 shadow-sm md:max-w-[min(20rem,calc(100vw-6rem))] md:flex-none">
           <UButton
             to="/"
             variant="ghost"
@@ -733,10 +739,43 @@ const topChromeMaxWidth = computed(() => {
             class="shrink-0 text-muted opacity-55 transition-[opacity,color,transform] hover:bg-transparent hover:text-highlighted hover:opacity-100 active:scale-[0.97]"
             aria-label="Home"
           />
-          <div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-            <h1 class="min-w-0 truncate text-balance text-sm font-semibold text-highlighted sm:text-base">
+          <div class="project-title-row flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            <h1 class="project-title block min-w-0 truncate whitespace-nowrap text-sm font-semibold text-highlighted sm:text-base">
               {{ project.name }}
             </h1>
+            <UPopover
+              v-if="isEditingPublishedCopy"
+              :content="{ side: 'bottom', align: 'start', sideOffset: 8 }"
+            >
+              <button
+                type="button"
+                class="public-badge group inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-elevated px-2 text-[11px] font-medium leading-none text-toned ring-1 ring-default/40 transition-[color,background-color,transform] hover:bg-accented hover:text-highlighted active:scale-[0.97]"
+                aria-label="This project is the public copy. Click for options."
+              >
+                <span
+                  class="size-1.5 rounded-full bg-warning transition-transform group-hover:scale-110"
+                  aria-hidden="true"
+                />
+                <span class="public-badge-label">Public</span>
+              </button>
+              <template #content>
+                <div class="flex max-w-xs flex-col gap-3 p-3">
+                  <p class="text-pretty text-sm text-default">
+                    You're editing the <span class="font-medium text-highlighted">public copy</span>. Changes here are visible to everyone.
+                  </p>
+                  <UButton
+                    size="sm"
+                    color="primary"
+                    variant="soft"
+                    label="Make a local copy"
+                    icon="i-lucide-copy-plus"
+                    block
+                    class="transition-transform active:scale-[0.97]"
+                    @click="duplicateProject"
+                  />
+                </div>
+              </template>
+            </UPopover>
             <UDropdownMenu
               :items="projectMenuItems"
               :content="{ align: 'end' }"
@@ -786,7 +825,8 @@ const topChromeMaxWidth = computed(() => {
       <!-- Top-right chrome: cloud actions -->
       <div
         v-if="project && !userNeedsEmailVerification"
-        class="fixed right-3 top-3 z-30 flex max-w-[min(calc(100vw-1.5rem),56rem)] flex-col items-end gap-1 sm:right-4 sm:top-4"
+        class="project-top-actions fixed inset-x-3 top-[var(--project-mobile-action-top)] z-30 flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-1 md:inset-x-auto md:right-4 md:top-4 md:max-w-[min(calc(100vw-1.5rem),56rem)]"
+        :style="{ '--project-mobile-action-top': mobileActionTop }"
       >
         <div class="pointer-events-auto flex max-w-full flex-row flex-wrap items-center justify-end gap-2">
           <div
@@ -870,3 +910,79 @@ const topChromeMaxWidth = computed(() => {
       />
   </div>
 </template>
+
+<style scoped>
+.project-top-chrome {
+  max-width: calc(100vw - 1.5rem);
+}
+
+.project-title {
+  text-wrap: nowrap;
+}
+
+.project-title-row {
+  container-type: inline-size;
+}
+
+.public-badge-label {
+  display: none;
+}
+
+@container (min-width: 10.5rem) {
+  .public-badge-label {
+    display: inline;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .project-page {
+    --project-editor-safe-top: 4rem;
+  }
+
+  .project-input-pane {
+    padding-top: var(--project-editor-safe-top);
+  }
+
+  .project-input-pane--no-mobile-offset {
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 374.98px) {
+  .project-page {
+    --project-editor-safe-top: 6.5rem;
+  }
+
+  .project-top-chrome {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .project-top-chrome > :first-child {
+    flex-basis: 100%;
+  }
+}
+
+@media (min-width: 768px) {
+  .project-top-chrome {
+    width: var(--project-top-chrome-max-width);
+    max-width: var(--project-top-chrome-max-width);
+  }
+
+  .project-top-chrome > :first-child {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
+  .public-badge-label {
+    display: inline;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .project-top-actions :deep(#morti-project-canvas-chrome-host > *) {
+    justify-content: flex-end;
+    max-width: 100%;
+  }
+}
+</style>

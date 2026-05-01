@@ -562,8 +562,11 @@ if (getCurrentScope()) {
       @update:zoom-percent="(v: number) => emit('update:zoomPercent', v)"
     />
 
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-2 pb-2 pt-10 sm:px-3 sm:pb-3">
-      <div class="pointer-events-auto flex max-h-[min(16rem,42vh)] w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-xl bg-elevated shadow-lg ring-1 ring-default/60">
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-6 sm:px-3 sm:pb-3 sm:pt-10">
+      <div
+        class="pointer-events-auto flex w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-xl bg-elevated shadow-lg ring-1 ring-default/60"
+        :class="selectedCount > 0 ? 'max-h-[min(14rem,36dvh)] sm:max-h-[min(16rem,42vh)]' : 'max-h-[min(7rem,26dvh)] sm:max-h-[min(16rem,42vh)]'"
+      >
         <div class="inspector-root grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-muted">
           <div
             v-if="visibleIssues.length > 0"
@@ -682,21 +685,21 @@ if (getCurrentScope()) {
               class="grid min-h-0 min-w-0"
             >
               <div
-                class="relative min-h-0 min-w-0 cursor-pointer active:scale-[0.97] transition-transform duration-150"
+                class="relative min-h-0 min-w-0 cursor-pointer transition-transform duration-150 active:scale-[0.97]"
                 @click="settingsOpen = true"
               >
-                <div class="grid min-w-0 grid-cols-3 gap-2 pt-1 h-40">
+                <div class="grid h-20 min-w-0 grid-cols-3 gap-1.5 pt-0.5 sm:h-40 sm:gap-2 sm:pt-1">
                   <article
                     v-for="field in summaryConfigFields"
                     :key="field.key"
-                    class="min-w-0 rounded-lg bg-default px-2 py-2.5 shadow-sm sm:px-3 flex flex-col"
+                    class="flex min-w-0 flex-col rounded-lg bg-default px-1.5 py-1.5 shadow-sm sm:px-3 sm:py-2.5"
                   >
-                    <div class="flex min-w-0 flex-col gap-2 p-2 justify-center flex-1">
-                      <h3 class="min-w-0 text-balance text-[0.7rem] font-medium leading-snug tracking-wide text-muted">
+                    <div class="flex min-w-0 flex-1 flex-col justify-center gap-1 p-1 sm:gap-2 sm:p-2">
+                      <h3 class="min-w-0 text-[0.62rem] font-medium leading-tight text-muted sm:text-balance sm:text-[0.7rem] sm:leading-snug">
                         {{ summaryLabel(field) }} ({{ field.unit }})
                       </h3>
-                      <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0 pb-2">
-                        <span class="text-[3rem] font-extralight tabular-nums leading-none tracking-[-0.1em] text-highlighted">
+                      <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0 sm:pb-2">
+                        <span class="min-w-0 text-xl font-extralight leading-none tracking-normal tabular-nums text-highlighted sm:text-[2.75rem]">
                           {{ formatConfigValue(field) }}
                         </span>
                       </div>

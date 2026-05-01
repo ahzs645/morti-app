@@ -277,12 +277,12 @@ function isDemo(projectId: string): boolean {
   <UContainer class="pb-10 pt-20 sm:pb-14 sm:pt-16">
     <div class="pointer-events-none absolute left-3 top-3 z-30 sm:left-4 sm:top-4">
       <img
-        src="/favicon.svg"
+        src="/morti_logo.svg"
         alt="Morti"
-        width="10"
-        height="10"
+        width="44"
+        height="28"
         decoding="async"
-        class="size-7 select-none"
+        class="h-7 w-auto select-none"
       >
     </div>
 

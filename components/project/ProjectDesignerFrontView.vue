@@ -33,14 +33,53 @@ const Ke = 4 // column-resize divider lateral margin
 const We = 4 // column-resize divider width / module-boundary spacer height
 const zt = 6 // module-boundary drag-handle height
 const ALLOWED_ZOOMS = [100, 75, 50, 25] as const
+const OUTER_RAIL_GAP = 12 // gap-3 between side add buttons and the rail
+const VIEWPORT_INLINE_PADDING = 32 // p-4 on the scroll content
+const MIN_FIT_PX_PER_METER = 64
 
 const clampedZoom = computed<number>(() => {
   const z = props.zoomPercent
   return ALLOWED_ZOOMS.includes(z as typeof ALLOWED_ZOOMS[number]) ? z : 100
 })
 
-// pixels per metre at the current zoom
-const pxPerMeter = computed<number>(() => Al * (clampedZoom.value / 100))
+const viewportRef = ref<HTMLElement | null>(null)
+const viewportWidth = ref(0)
+let resizeObserver: ResizeObserver | null = null
+
+onMounted(() => {
+  if (!viewportRef.value) return
+  resizeObserver = new ResizeObserver(([entry]) => {
+    viewportWidth.value = entry?.contentRect.width ?? 0
+  })
+  resizeObserver.observe(viewportRef.value)
+  viewportWidth.value = viewportRef.value.getBoundingClientRect().width
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+})
+
+const basePxPerMeter = computed<number>(() => Al * (clampedZoom.value / 100))
+const totalColumnWidthMeters = computed<number>(() =>
+  props.columns.reduce((sum, col) => sum + Math.max(0, col.width), 0),
+)
+const fitPxPerMeter = computed<number>(() => {
+  const meters = totalColumnWidthMeters.value
+  const available = viewportWidth.value - VIEWPORT_INLINE_PADDING
+  if (props.columns.length === 0 || meters <= 0 || available <= 0) return basePxPerMeter.value
+
+  const staticWidth = 2 * Vl + 2 * OUTER_RAIL_GAP + (props.columns.length + 1) * (We + Ke)
+  const fitted = (available - staticWidth) / meters
+  if (!Number.isFinite(fitted) || fitted <= 0) {
+    return Math.min(basePxPerMeter.value, MIN_FIT_PX_PER_METER)
+  }
+
+  return Math.max(MIN_FIT_PX_PER_METER, Math.min(basePxPerMeter.value, fitted))
+})
+
+// pixels per metre at the current zoom, auto-fitted when the rail is wider than the viewport
+const pxPerMeter = computed<number>(() => fitPxPerMeter.value)
 
 const selectedSet = computed<Set<string>>(() => new Set(props.selectedModuleIds))
 const anySelected = computed<boolean>(() => selectedSet.value.size > 0)
@@ -321,13 +360,16 @@ function addButtonMarginTop(boundaryIndex: number): string {
     data-v-b07ba140
     @click="emit('clear-module-selection')"
   >
-    <div class="h-full overflow-auto">
-      <div class="flex min-h-full min-w-full items-center justify-center p-4">
+    <div
+      ref="viewportRef"
+      class="h-full overflow-auto overscroll-contain"
+    >
+      <div class="flex min-h-full min-w-full items-center justify-center p-4 pb-32 sm:pb-44">
         <div class="flex w-max items-start justify-center gap-3">
           <button
             type="button"
             aria-label="Add column on the left"
-            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            class="editor-touch-target flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             :style="columns.length > 0 ? { marginTop: addButtonMarginTop(0) } : undefined"
             @click.stop="emit('add-column-left')"
           >
@@ -344,7 +386,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
             >
               <div
                 v-if="columns.length > 0"
-                class="shrink-0 cursor-col-resize touch-none transition-opacity hover:opacity-75"
+                class="column-resize-hit shrink-0 cursor-col-resize touch-none transition-opacity hover:opacity-75"
                 :class="selectedFillClass"
                 :style="{ ...spacerStyle('width'), ...columnResizeMarginStyle(), height: boundaryHeightPx(0) }"
                 role="separator"
@@ -367,7 +409,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                   >
                     <button
                       type="button"
-                      class="mx-auto flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      class="editor-touch-target mx-auto flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                       :style="{ marginBottom: `${Bt}px` }"
                       :aria-label="`Add module on top of column ${ci + 1}`"
                       @click.stop="emit('add-module-top', ci)"
@@ -463,7 +505,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
 
                         <button
                           type="button"
-                          class="relative block w-full shrink-0 cursor-row-resize"
+                          class="boundary-resize-hit relative block w-full shrink-0 cursor-row-resize"
                           :style="{ height: `${zt}px` }"
                           :aria-label="`Resize module boundary ${mi + 1} in column ${ci + 1}`"
                           @pointerdown="onBoundaryPointerDown(ci, mi + 1, $event)"
@@ -480,7 +522,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                 </div>
 
                 <div
-                  class="shrink-0 cursor-col-resize touch-none transition-opacity hover:opacity-75"
+                  class="column-resize-hit shrink-0 cursor-col-resize touch-none transition-opacity hover:opacity-75"
                   :class="selectedFillClass"
                   :style="{ ...spacerStyle('width'), ...columnResizeMarginStyle(), height: boundaryHeightPx(ci + 1) }"
                   role="separator"
@@ -511,7 +553,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
               >
                 <button
                   type="button"
-                  class="group relative inline-flex items-center text-xs text-muted transition-transform active:scale-[0.97]"
+                  class="editor-touch-target group relative inline-flex items-center text-xs text-muted transition-transform active:scale-[0.97]"
                   :aria-label="`Remove column ${columnLetter(ci)}`"
                   @click.stop="emit('remove-column', ci)"
                 >
@@ -533,7 +575,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
           <button
             type="button"
             aria-label="Add column on the right"
-            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            class="editor-touch-target flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             :style="columns.length > 0 ? { marginTop: addButtonMarginTop(columns.length) } : undefined"
             @click.stop="emit('add-column-right')"
           >
@@ -575,5 +617,26 @@ function addButtonMarginTop(boundaryIndex: number): string {
     transparent 0,
     transparent 12px
   );
+}
+.editor-touch-target,
+.column-resize-hit,
+.boundary-resize-hit {
+  position: relative;
+}
+.editor-touch-target::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+}
+.column-resize-hit::after {
+  content: "";
+  position: absolute;
+  inset: 0 -10px;
+}
+.boundary-resize-hit::after {
+  content: "";
+  position: absolute;
+  inset: -10px 0;
 }
 </style>

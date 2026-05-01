@@ -2,9 +2,12 @@
 interface Props {
   title?: string
   description?: string
+  dismissible?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  dismissible: true,
+})
 const open = defineModel<boolean>('open', { required: true })
 
 const slots = useSlots()
@@ -24,6 +27,7 @@ const ui = {
     v-model:open="open"
     :title="props.title"
     :description="props.description"
+    :dismissible="props.dismissible"
     :ui="ui"
   >
     <template #body>

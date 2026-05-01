@@ -87,6 +87,7 @@ function resendCode() {
     v-model:open="open"
     :title="title"
     :description="description"
+    :dismissible="false"
   >
     <div class="flex flex-col gap-3">
       <UAlert
@@ -147,6 +148,7 @@ function resendCode() {
       <div class="grid w-full grid-cols-2 gap-2">
         <UButton
           label="Cancel"
+          type="button"
           color="neutral"
           variant="outline"
           class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
@@ -156,6 +158,7 @@ function resendCode() {
         <UButton
           v-if="step === 'email'"
           label="Send code"
+          type="button"
           class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="loading"
           @click="submitEmail"
@@ -163,6 +166,7 @@ function resendCode() {
         <UButton
           v-else
           label="Sign in"
+          type="button"
           class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="loading"
           @click="submitCode"

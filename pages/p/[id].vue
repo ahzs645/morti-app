@@ -87,7 +87,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="fixed inset-0 flex flex-col bg-default">
     <!-- Top-left back link -->
-    <div class="absolute left-3 top-3 z-30 flex max-w-[calc(100vw-6rem)] flex-wrap items-center gap-2 sm:left-4 sm:top-4">
+    <div class="absolute inset-x-3 top-3 z-30 flex max-w-[calc(100vw-1.5rem)] flex-nowrap items-center gap-2 md:inset-x-auto md:left-4 md:top-4 md:max-w-[calc(100vw-6rem)]">
       <div class="flex h-10 min-h-10 shrink-0 items-center justify-center rounded-full bg-elevated p-1 shadow-md">
         <UButton
           to="/"
@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
       </div>
       <div
         v-if="data?.record"
-        class="flex h-10 min-h-10 max-w-[min(20rem,calc(100vw-8rem))] items-center rounded-full bg-elevated px-4 shadow-md"
+        class="flex h-10 min-h-10 min-w-0 flex-1 items-center rounded-full bg-elevated px-4 shadow-md md:max-w-[min(20rem,calc(100vw-8rem))] md:flex-none"
       >
         <span class="truncate text-xs font-semibold text-highlighted text-pretty">{{ data.record.name }}</span>
       </div>

@@ -17,11 +17,13 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLElement | null>(null)
 const isDragging = ref(false)
+const isStacked = ref(false)
 const internalRatio = ref(props.splitRatio)
-const MIN_PANE_PX = 80
+const MIN_PANE_PX = 112
 
-let startClientX = 0
-let startLeftPx = 0
+let startClient = 0
+let startInputPx = 0
+let mediaQuery: MediaQueryList | null = null
 
 watch(
   () => props.splitRatio,
@@ -36,14 +38,30 @@ watch(
   },
 )
 
+function updateStackedState() {
+  isStacked.value = mediaQuery?.matches ?? false
+}
+
+onMounted(() => {
+  mediaQuery = window.matchMedia('(max-width: 767.98px)')
+  updateStackedState()
+  mediaQuery.addEventListener('change', updateStackedState)
+})
+
+onBeforeUnmount(() => {
+  mediaQuery?.removeEventListener('change', updateStackedState)
+  mediaQuery = null
+})
+
 function beginDrag(event: PointerEvent) {
   if (props.dividerLocked) return
   endDrag()
   event.preventDefault()
   isDragging.value = true
-  startClientX = event.clientX
-  const width = containerRef.value?.getBoundingClientRect().width ?? 0
-  startLeftPx = (1 - internalRatio.value) * width
+  const rect = containerRef.value?.getBoundingClientRect()
+  const axisSize = isStacked.value ? rect?.height ?? 0 : rect?.width ?? 0
+  startClient = isStacked.value ? event.clientY : event.clientX
+  startInputPx = (1 - internalRatio.value) * axisSize
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', endDrag)
   window.addEventListener('pointercancel', endDrag)
@@ -51,11 +69,14 @@ function beginDrag(event: PointerEvent) {
 
 function onPointerMove(event: PointerEvent) {
   if (!isDragging.value || !containerRef.value) return
-  const width = containerRef.value.getBoundingClientRect().width
-  const dx = event.clientX - startClientX
-  const leftPx = startLeftPx + dx
-  const clampedLeftPx = Math.min(Math.max(leftPx, MIN_PANE_PX), width - MIN_PANE_PX)
-  internalRatio.value = 1 - clampedLeftPx / width
+  const rect = containerRef.value.getBoundingClientRect()
+  const axisSize = isStacked.value ? rect.height : rect.width
+  if (axisSize <= 0) return
+  const delta = (isStacked.value ? event.clientY : event.clientX) - startClient
+  const minPane = Math.min(MIN_PANE_PX, axisSize / 2)
+  const inputPx = startInputPx + delta
+  const clampedInputPx = Math.min(Math.max(inputPx, minPane), axisSize - minPane)
+  internalRatio.value = 1 - clampedInputPx / axisSize
   emit('update:splitRatio', internalRatio.value)
 }
 
@@ -143,7 +164,7 @@ const previewStyle = computed(() => {
   }
 }
 .editor-split.is-dragging {
-  cursor: col-resize;
+  cursor: row-resize;
 }
 .pane {
   min-width: 0;
@@ -176,6 +197,7 @@ const previewStyle = computed(() => {
   justify-content: center;
   flex: 0 0 9px;
   cursor: row-resize;
+  touch-action: none;
   z-index: 10;
   background-color: var(--ui-bg);
   border-top: 1px solid var(--ui-border);
@@ -185,6 +207,9 @@ const previewStyle = computed(() => {
   transition: background-color 0.15s;
 }
 @media (min-width: 768px) {
+  .editor-split.is-dragging {
+    cursor: col-resize;
+  }
   .divider {
     cursor: col-resize;
     border-top: 0;

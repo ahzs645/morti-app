@@ -10,19 +10,18 @@ import type { CompiledPanel, FurnitureDoc, PanelOperation, PanelRole } from '~~/
 import { readFurnitureDoc } from '~~/shared/yjs/doc'
 
 const PanelSvgPreview = defineAsyncComponent(() => import('~~/components/project/PanelSvgPreview.vue'))
+const PanelCanvas = defineAsyncComponent(() => import('~~/components/three/PanelCanvas.vue'))
 
 interface Props {
   ydoc?: Y.Doc | null
   doc?: Y.Doc | null
   selectedDrawingKey?: string | null
-  padForPublishedBanner?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   ydoc: null,
   doc: null,
   selectedDrawingKey: null,
-  padForPublishedBanner: false,
 })
 
 const emit = defineEmits<{
@@ -134,6 +133,16 @@ function selectPanel(group: PanelGroup) {
   emit('update:selectedDrawingKey', isSelectedGroup(group) ? null : group.key)
 }
 
+function onPanelCardClick(group: PanelGroup) {
+  if (isShowingSelectedPanel.value) return
+  selectPanel(group)
+}
+
+function onPanelCardKeydown(group: PanelGroup) {
+  if (isShowingSelectedPanel.value) return
+  selectPanel(group)
+}
+
 function stopSelectedCanvasClick(group: PanelGroup, event: MouseEvent) {
   if (isSelectedGroup(group)) event.stopPropagation()
 }
@@ -145,11 +154,8 @@ function formatMm(value: number): string {
 
 <template>
   <div
-    class="h-full min-h-0 w-full px-3 pb-3"
-    :class="[
-      isShowingSelectedPanel ? 'flex min-h-0 flex-col' : 'overflow-auto',
-      { 'pt-34': props.padForPublishedBanner, 'pt-26': !props.padForPublishedBanner },
-    ]"
+    class="h-full min-h-0 w-full px-3 pb-3 pt-32 md:pt-26"
+    :class="isShowingSelectedPanel ? 'flex min-h-0 flex-col' : 'overflow-auto'"
   >
     <div
       v-if="panelGroups.length === 0"
@@ -165,23 +171,30 @@ function formatMm(value: number): string {
       <article
         v-for="group in visiblePanelGroups"
         :key="group.key"
-        class="flex cursor-pointer flex-col overflow-hidden rounded-lg bg-default shadow-sm transition-[box-shadow,transform] active:scale-[0.99]"
+        class="flex flex-col overflow-hidden rounded-lg bg-default shadow-sm transition-[box-shadow,transform]"
         :class="[
           isSelectedGroup(group) ? 'ring-2 ring-primary' : '',
-          isShowingSelectedPanel ? 'min-h-0 flex-1' : '',
+          isShowingSelectedPanel ? 'min-h-0 flex-1 cursor-default' : 'cursor-pointer active:scale-[0.99]',
         ]"
-        role="button"
-        tabindex="0"
-        @click="selectPanel(group)"
-        @keydown.enter.prevent="selectPanel(group)"
-        @keydown.space.prevent="selectPanel(group)"
+        :role="isShowingSelectedPanel ? undefined : 'button'"
+        :tabindex="isShowingSelectedPanel ? undefined : 0"
+        @click="onPanelCardClick(group)"
+        @keydown.enter.prevent="onPanelCardKeydown(group)"
+        @keydown.space.prevent="onPanelCardKeydown(group)"
       >
         <div
           class="w-full"
           :class="isShowingSelectedPanel ? 'min-h-0 flex-1' : 'aspect-square'"
           @click="stopSelectedCanvasClick(group, $event)"
         >
+          <PanelCanvas
+            v-if="isShowingSelectedPanel"
+            :part="group.representative"
+            :operations="group.operations"
+            class="h-full min-h-0 w-full"
+          />
           <PanelSvgPreview
+            v-else
             :part="group.representative"
             :operations="group.operations"
             class="h-full min-h-0 w-full"

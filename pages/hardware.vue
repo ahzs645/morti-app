@@ -43,7 +43,7 @@ function formatDims(spec: HardwareSpec): string {
         />
       </div>
 
-      <div class="overflow-x-auto rounded-xl shadow-sm ring ring-default">
+      <div class="max-w-full overflow-x-auto rounded-xl shadow-sm ring ring-default">
         <table class="w-full min-w-[48rem] border-collapse text-sm tabular-nums">
           <thead>
             <tr class="bg-muted text-left text-muted">

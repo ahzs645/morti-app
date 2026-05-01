@@ -58,7 +58,7 @@ function selectCutlist() {
 </script>
 
 <template>
-  <div class="relative h-screen min-h-0 w-full overflow-hidden bg-default">
+  <div class="relative h-[100dvh] min-h-0 w-full overflow-hidden bg-default">
     <div
       class="absolute left-2 top-2 z-20 flex items-center gap-1 rounded-lg bg-default/90 p-1 shadow-sm backdrop-blur ring ring-default sm:left-3 sm:top-3"
     >
@@ -82,7 +82,7 @@ function selectCutlist() {
 
     <ClientOnly>
       <template #fallback>
-        <div class="flex h-screen w-full items-center justify-center bg-default">
+        <div class="flex h-[100dvh] w-full items-center justify-center bg-default">
           <UIcon
             name="i-lucide-loader-circle"
             class="size-8 animate-spin text-muted"
