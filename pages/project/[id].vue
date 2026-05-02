@@ -13,7 +13,7 @@ const styleTabFlag = computed<boolean>(
   () => runtimeConfig.public.features?.projectStyleTab === true,
 )
 
-const { user, isAuthed, isVerified } = useAuth()
+const { user, isCloudAuthed, isVerified } = useAuth()
 const {
   getLocalProject,
   renameLocalProject,
@@ -37,6 +37,8 @@ const cloudRecordMutatedAt = ref(0)
 
 let designHandle: Awaited<ReturnType<typeof useDesignDoc>> | null = null
 const docRef = shallowRef<unknown>(null)
+const projectCanvasRef = ref<{ getExportRoot: () => unknown } | null>(null)
+const exportingModel = ref(false)
 const undoFn = ref<() => void>(() => {})
 const redoFn = ref<() => void>(() => {})
 const canUndo = ref(false)
@@ -73,7 +75,7 @@ const isPublished = computed<boolean>(() =>
 )
 const isDemo = computed<boolean>(() => cloudRecord.value?.is_demo === true)
 const isEditingPublishedCopy = computed<boolean>(
-  () => isAuthed.value && isVerified.value && !!project.value && isPublished.value,
+  () => isCloudAuthed.value && !!project.value && isPublished.value,
 )
 const isMobileViewport = ref(false)
 const MOBILE_ASSEMBLY_PREVIEW_RATIO = 0.42
@@ -256,7 +258,7 @@ onMounted(async () => {
 watch(id, (projectId) => { void loadProject(projectId) })
 
 async function refreshCloudRecord() {
-  if (!user.value?.id || !isVerified.value || !project.value) {
+  if (!isCloudAuthed.value || !project.value) {
     cloudRecord.value = null
     return
   }
@@ -333,10 +335,10 @@ watch(viewMode, (mode) => {
 let cloudStyleSyncTimer: ReturnType<typeof setTimeout> | undefined
 
 function queueCloudStyleSync() {
-  if (!project.value || !user.value?.id || !isVerified.value) return
+  if (!project.value || !isCloudAuthed.value) return
   if (cloudStyleSyncTimer) clearTimeout(cloudStyleSyncTimer)
   cloudStyleSyncTimer = setTimeout(async () => {
-    if (!project.value || !user.value?.id || !isVerified.value) return
+    if (!project.value || !isCloudAuthed.value) return
     try {
       const style = normalizePublicStyle(publicStyle.value)
       cloudRecord.value = cloudRecord.value?.id
@@ -454,7 +456,7 @@ async function confirmRename() {
   const updated = await renameLocalProject(project.value.id, renameValue.value)
   if (updated) {
     project.value = updated
-    if (isAuthed.value && isVerified.value) {
+    if (isCloudAuthed.value) {
       try {
         cloudRecord.value = await ensureCloudProject(updated, publicStyle.value)
       }
@@ -470,16 +472,50 @@ async function duplicateProject() {
   if (duplicate) await navigateTo(`/project/${duplicate.id}`)
 }
 
-async function exportProject() {
-  if (!project.value || !docRef.value || !import.meta.client) return
-  const blob = exportDoc(docRef.value as Parameters<typeof exportDoc>[0])
+function safeFileName(): string {
+  return (project.value?.name.trim() || 'project').replace(/[<>:"/\\|?*]/g, '-')
+}
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${(project.value.name.trim() || 'project').replace(/[<>:"/\\|?*]/g, '-')}.morti`
+  a.download = filename
   a.rel = 'noopener'
   a.click()
   URL.revokeObjectURL(url)
+}
+
+async function exportProject() {
+  if (!project.value || !docRef.value || !import.meta.client) return
+  const blob = exportDoc(docRef.value as Parameters<typeof exportDoc>[0])
+  downloadBlob(blob, `${safeFileName()}.morti`)
+}
+
+async function exportModel(format: 'glb' | 'gltf') {
+  if (!project.value || !docRef.value || !import.meta.client || exportingModel.value) return
+  const root = projectCanvasRef.value?.getExportRoot?.()
+  if (!root) return
+  exportingModel.value = true
+  try {
+    const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js')
+    const exporter = new GLTFExporter()
+    const result = await new Promise<ArrayBuffer | object>((resolve, reject) => {
+      exporter.parse(
+        root as Parameters<InstanceType<typeof GLTFExporter>['parse']>[0],
+        (out) => resolve(out as ArrayBuffer | object),
+        (err) => reject(err),
+        { binary: format === 'glb' },
+      )
+    })
+    const blob = format === 'glb'
+      ? new Blob([result as ArrayBuffer], { type: 'model/gltf-binary' })
+      : new Blob([JSON.stringify(result)], { type: 'model/gltf+json' })
+    downloadBlob(blob, `${safeFileName()}.${format}`)
+  }
+  finally {
+    exportingModel.value = false
+  }
 }
 
 const deleteDialogMessage = computed<string>(() => {
@@ -496,7 +532,7 @@ async function confirmDelete() {
   if (!project.value) return
   const projectId = project.value.id
   deleteError.value = ''
-  if (isAuthed.value) {
+  if (isCloudAuthed.value) {
     try {
       await softDeleteCloudProjectForClientId(projectId)
     }
@@ -543,7 +579,30 @@ function showCutlistWipAlert() {
 
 const projectMenuItems = computed(() => [
   { label: 'Change name', icon: 'i-lucide-text-cursor-input', onSelect: openRename },
-  { label: 'Export', icon: 'i-lucide-download', disabled: !docRef.value, onSelect: () => { void exportProject() } },
+  {
+    label: 'Export',
+    icon: 'i-lucide-download',
+    disabled: !docRef.value,
+    children: [
+      {
+        label: 'Project (.morti)',
+        icon: 'i-lucide-file-archive',
+        onSelect: () => { void exportProject() },
+      },
+      {
+        label: '3D model (.glb)',
+        icon: 'i-lucide-box',
+        disabled: exportingModel.value,
+        onSelect: () => { void exportModel('glb') },
+      },
+      {
+        label: '3D model (.gltf)',
+        icon: 'i-lucide-file-code-2',
+        disabled: exportingModel.value,
+        onSelect: () => { void exportModel('gltf') },
+      },
+    ],
+  },
   { label: 'Duplicate', icon: 'i-lucide-copy-plus', disabled: !docRef.value, onSelect: () => { void duplicateProject() } },
   ...(isAdmin.value
     ? [
@@ -679,6 +738,7 @@ const mobileActionTop = computed(() =>
               <div class="relative h-full min-h-0 w-full">
                 <ProjectCanvas
                   v-if="docRef && (viewMode === 'assembly' || (styleTabFlag && viewMode === 'style'))"
+                  ref="projectCanvasRef"
                   :ydoc="(docRef as any)"
                   :public-style="publicStyle"
                   :render-mode="canvasRenderMode"

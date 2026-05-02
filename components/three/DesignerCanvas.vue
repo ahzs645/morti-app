@@ -1648,7 +1648,11 @@ function waitForCapturePaint(): Promise<void> {
   })
 }
 
-defineExpose({ getCaptureCanvas, lockCaptureCamera, waitForCapturePaint })
+function getExportRoot(): THREE.Object3D | null {
+  return panelGroup
+}
+
+defineExpose({ getCaptureCanvas, lockCaptureCamera, waitForCapturePaint, getExportRoot })
 
 // ---------------------------------------------------------------------------
 // Wrapper class — capture mode strips border per spec

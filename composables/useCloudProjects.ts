@@ -55,13 +55,18 @@ async function fetchRecordOrNull(path: string): Promise<CloudProjectRecord | nul
 }
 
 export function useCloudProjects() {
-  const { user } = useAuth()
+  const { user, isLocalBypass } = useAuth()
 
   function isAdmin(): boolean {
     return user.value?.is_admin === true
   }
 
+  function ensureCloudAllowed(): void {
+    if (isLocalBypass.value) throw new Error('Cloud sync is disabled for the local development account.')
+  }
+
   async function listOwnerCloudProjects(options: OwnerCloudListOptions = {}): Promise<CloudProjectRecord[]> {
+    if (isLocalBypass.value) return []
     const query = options.includeDemos ? '?includeDemos=true' : ''
     try {
       return await $fetch<CloudProjectRecord[]>(`/api/projects${query}`)
@@ -83,12 +88,12 @@ export function useCloudProjects() {
   }
 
   async function findCloudProjectByClientId(clientProjectId: string): Promise<CloudProjectRecord | null> {
-    if (!user.value?.id) return null
+    if (!user.value?.id || isLocalBypass.value) return null
     return await fetchRecordOrNull(`/api/projects/by-client/${encodeURIComponent(clientProjectId)}`)
   }
 
   async function reconcileLocalProjectsWithOwnerCloud(options: OwnerCloudListOptions = {}): Promise<CloudProjectRecord[]> {
-    if (!user.value?.id) return []
+    if (!user.value?.id || isLocalBypass.value) return []
     const records = await listOwnerCloudProjects(options)
     const local = useLocalProjects()
     for (const record of records) {
@@ -116,6 +121,7 @@ export function useCloudProjects() {
   }
 
   async function ensureCloudProject(project: EnsureCloudProjectInput, style?: PublicStyle | null): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     const clientProjectId = clientProjectIdOf(project)
     const existing = await findCloudProjectByClientId(clientProjectId)
     const stylePayload = publicStylePayload(style)
@@ -140,6 +146,7 @@ export function useCloudProjects() {
   }
 
   async function softDeleteCloudProjectForClientId(clientProjectId: string): Promise<void> {
+    if (isLocalBypass.value) return
     const rec = await findCloudProjectByClientId(clientProjectId)
     if (!rec) return
     await $fetch(`/api/projects/${encodeURIComponent(rec.id)}`, {
@@ -149,6 +156,7 @@ export function useCloudProjects() {
   }
 
   async function uploadSnapshotBytes(recordId: string, clientProjectId: string, bytes: Uint8Array): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     const form = snapshotFormData(bytes, clientProjectId)
     return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}/snapshot`, {
       method: 'PUT',
@@ -164,6 +172,7 @@ export function useCloudProjects() {
   }
 
   async function uploadSnapshot(project: LocalProjectRow): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     const local = useLocalProjects()
     const bytes = await local.getDesignSnapshot(project.id)
     if (!bytes || bytes.byteLength === 0) throw new Error('Nothing to upload yet for this project.')
@@ -172,6 +181,7 @@ export function useCloudProjects() {
   }
 
   async function publishFromLocal(project: LocalProjectRow, style?: PublicStyle | null): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     const local = useLocalProjects()
     const bytes = await local.getDesignSnapshot(project.id)
     if (!bytes || bytes.byteLength === 0) throw new Error('Nothing to publish yet.')
@@ -187,6 +197,7 @@ export function useCloudProjects() {
   }
 
   async function unpublishCloudProject(recordId: string): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
       method: 'PATCH',
       body: { visibility: 'private' },
@@ -194,6 +205,7 @@ export function useCloudProjects() {
   }
 
   async function downloadSnapshotIntoLocal(recordId: string, localProjectId: string): Promise<void> {
+    ensureCloudAllowed()
     const record = await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`)
     const bytes = await fetchSnapshotBytes(record)
     if (!bytes || bytes.byteLength === 0) throw new Error('No cloud snapshot for this project.')
@@ -201,6 +213,7 @@ export function useCloudProjects() {
   }
 
   async function setCloudProjectName(recordId: string, name: string): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
       method: 'PATCH',
       body: { name },
@@ -208,6 +221,7 @@ export function useCloudProjects() {
   }
 
   async function setCloudProjectVisibility(recordId: string, visibility: ProjectVisibility): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
       method: 'PATCH',
       body: { visibility },
@@ -215,6 +229,7 @@ export function useCloudProjects() {
   }
 
   async function setCloudPublicStyle(recordId: string, style: PublicStyle): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
       method: 'PATCH',
       body: { public_style: publicStylePayload(style) },
@@ -226,6 +241,7 @@ export function useCloudProjects() {
   }
 
   async function setCloudPublishedAt(recordId: string, isoOrNull: string | null): Promise<CloudProjectRecord> {
+    ensureCloudAllowed()
     return await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`, {
       method: 'PATCH',
       body: { published_at: isoOrNull },

@@ -52,6 +52,7 @@ defineExpose({
     (inner.value as any)?.getCaptureCanvas?.() ?? null,
   lockCaptureCamera: (): void => (inner.value as any)?.lockCaptureCamera?.(),
   waitForCapturePaint: (): Promise<void> => (inner.value as any)?.waitForCapturePaint?.() ?? Promise.resolve(),
+  getExportRoot: (): unknown => (inner.value as any)?.getExportRoot?.() ?? null,
 })
 </script>
 

@@ -64,6 +64,11 @@ export default defineNuxtConfig({
     postmarkFromEmail: process.env.POSTMARK_FROM_EMAIL || '',
     postmarkMessageStream: process.env.POSTMARK_MESSAGE_STREAM || 'outbound',
     appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
+    cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
+    cloudflareAiApiToken: process.env.CLOUDFLARE_AI_API_TOKEN || process.env.CLOUDFLARE_AUTH_TOKEN || '',
+    cloudflareAiModel: process.env.CLOUDFLARE_AI_MODEL || '@cf/openai/gpt-oss-20b',
+    aiFurnitureAllowLocalUnauth: process.env.AI_FURNITURE_ALLOW_LOCAL_UNAUTH === 'true',
+    localAuthBypass: process.env.LOCAL_AUTH_BYPASS === 'true',
     public: {
       appBaseUrl: process.env.NUXT_PUBLIC_APP_BASE_URL || process.env.APP_BASE_URL || '',
       posthogKey: 'phc_A6uepvw77fYmapESpFBiwr6Utk3WPaKtzpByTehZbpkL',
@@ -73,6 +78,7 @@ export default defineNuxtConfig({
       appName: 'Morti',
       features: {
         projectStyleTab: false,
+        promptFurniture: false,
       },
       three: {
         maxTextureDimension: 16384,

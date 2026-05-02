@@ -20,9 +20,9 @@ const emit = defineEmits<{
   (e: 'unpublished'): void
 }>()
 
-const { user, isVerified } = useAuth()
+const { isCloudAuthed } = useAuth()
 const open = ref(false)
-const showActions = computed(() => !!user.value?.id && isVerified.value)
+const showActions = computed(() => isCloudAuthed.value)
 const isPublished = computed(() =>
   !!props.cloudRecord?.id
   && props.cloudRecord.visibility === 'public'

@@ -8,7 +8,7 @@ interface PreviewData {
   config: FurnitureConfig | null
 }
 
-const { user, isAuthed, signOut } = useAuth()
+const { user, isAuthed, isCloudAuthed, isLocalBypass, signOut } = useAuth()
 const local = useLocalProjects()
 const cloud = useCloudProjects()
 
@@ -211,7 +211,7 @@ async function confirmDelete() {
   if (!deleteProjectId.value) return
   const projectId = deleteProjectId.value
   deleteError.value = ''
-  if (isAuthed.value) {
+  if (isCloudAuthed.value) {
     try {
       await cloud.softDeleteCloudProjectForClientId(projectId)
     }
@@ -287,7 +287,7 @@ function isDemo(projectId: string): boolean {
     </div>
 
     <div
-      v-if="isSignedIn"
+      v-if="isSignedIn && !isLocalBypass"
       class="absolute right-3 top-3 z-30 sm:right-4 sm:top-4"
     >
       <UButton
@@ -301,7 +301,7 @@ function isDemo(projectId: string): boolean {
       />
     </div>
     <div
-      v-else-if="hydrated"
+      v-else-if="hydrated && !isSignedIn"
       class="absolute right-3 top-3 z-30 sm:right-4 sm:top-4"
     >
       <UButton

@@ -3,23 +3,31 @@ interface Props {
   title?: string
   description?: string
   dismissible?: boolean
+  size?: 'sm' | 'md' | 'lg'
 }
 
 const props = withDefaults(defineProps<Props>(), {
   dismissible: true,
+  size: 'sm',
 })
 const open = defineModel<boolean>('open', { required: true })
 
 const slots = useSlots()
 
-const ui = {
-  content: '!max-w-[calc(100vw-1rem)] sm:!max-w-sm rounded-2xl shadow-2xl',
+const contentSizeClass = computed(() => {
+  if (props.size === 'lg') return 'sm:!max-w-xl'
+  if (props.size === 'md') return 'sm:!max-w-md'
+  return 'sm:!max-w-sm'
+})
+
+const ui = computed(() => ({
+  content: `!max-w-[calc(100vw-1rem)] ${contentSizeClass.value} rounded-2xl shadow-2xl`,
   header: 'p-4 sm:p-5',
   body: 'p-4 sm:p-5',
   footer: 'flex flex-col gap-0 p-4 sm:px-5',
   title: 'text-balance',
   description: 'text-pretty',
-}
+}))
 </script>
 
 <template>

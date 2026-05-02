@@ -17,7 +17,7 @@ interface UseCloudAutosyncArgs {
 }
 
 export function useCloudAutosync({ projectId, doc, project }: UseCloudAutosyncArgs) {
-  const { isAuthed, isVerified } = useAuth()
+  const { isCloudAuthed } = useAuth()
   const { ensureCloudProject, fetchSnapshotBytes, uploadSnapshotBytes } = useCloudProjects()
   const { putDesignSnapshot, setLocalProjectCloudId } = useLocalProjects()
   const syncStatus = ref<SyncStatus>('idle')
@@ -30,7 +30,7 @@ export function useCloudAutosync({ projectId, doc, project }: UseCloudAutosyncAr
 
   async function runSync(): Promise<void> {
     if (disposed) return
-    if (!isAuthed.value || !isVerified.value) {
+    if (!isCloudAuthed.value) {
       syncStatus.value = 'idle'
       lastSyncError.value = null
       return

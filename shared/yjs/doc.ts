@@ -275,3 +275,26 @@ export function setConfigValue<K extends keyof FurnitureConfig>(doc: Y.Doc, key:
     cfg?.set(key as string, sanitizeConfigValue(key, value))
   }, 'setConfigValue')
 }
+
+export function replaceFurnitureDoc(doc: Y.Doc, next: Pick<FurnitureDoc, 'config' | 'columns'>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    map.set('schemaVersion', DESIGN_SCHEMA_VERSION)
+    let cfg = map.get('config') as Y.Map<unknown> | undefined
+    if (!cfg) {
+      cfg = new Y.Map<unknown>()
+      map.set('config', cfg)
+    }
+    for (const key of FURNITURE_CONFIG_WRITABLE_KEYS) {
+      cfg.set(key, sanitizeConfigValue(key, next.config[key]))
+    }
+
+    let cols = map.get('columns') as Y.Array<Y.Map<unknown>> | undefined
+    if (!cols) {
+      cols = new Y.Array<Y.Map<unknown>>()
+      map.set('columns', cols)
+    }
+    if (cols.length > 0) cols.delete(0, cols.length)
+    cols.insert(0, next.columns.map(toYColumn))
+  })
+}

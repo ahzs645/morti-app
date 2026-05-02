@@ -1,5 +1,7 @@
-import { getCurrentUser } from '~~/server/utils/auth'
+import { getCurrentUser, getLocalAuthBypassUser, isLocalAuthBypassAllowed } from '~~/server/utils/auth'
 
 export default defineEventHandler(async (event) => {
-  return { user: await getCurrentUser(event) }
+  if (isLocalAuthBypassAllowed(event)) return { user: getLocalAuthBypassUser() }
+  const user = await getCurrentUser(event)
+  return { user }
 })

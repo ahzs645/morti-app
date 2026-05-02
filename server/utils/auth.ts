@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { createError, deleteCookie, getCookie, setCookie } from 'h3'
 import type { AuthUser } from '~~/shared/domain/types'
+import { createLocalAuthBypassUser } from '~~/shared/domain/auth'
 import { createId, hashValue, randomToken } from '~~/server/utils/security'
 import { dbQuery } from '~~/server/utils/db'
 
@@ -19,6 +20,40 @@ interface UserRow {
 function iso(value: Date | string | null | undefined): string {
   if (!value) return ''
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
+}
+
+function firstHeaderValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? '' : value ?? ''
+}
+
+function hostNameFromHeader(value: string): string {
+  const first = value.split(',')[0]?.trim().toLowerCase() ?? ''
+  if (!first) return ''
+  if (first.startsWith('[')) {
+    const end = first.indexOf(']')
+    return end > 0 ? first.slice(1, end) : first
+  }
+  return first.split(':')[0] ?? ''
+}
+
+function isLocalhostHost(host: string): boolean {
+  return host === 'localhost'
+    || host === '127.0.0.1'
+    || host === '::1'
+    || host === '0.0.0.0'
+}
+
+export function isLocalAuthBypassAllowed(event: H3Event): boolean {
+  if (!import.meta.dev) return false
+  const config = useRuntimeConfig()
+  if (config.localAuthBypass !== true) return false
+  const hostHeader = firstHeaderValue(event.node.req.headers['x-forwarded-host'])
+    || firstHeaderValue(event.node.req.headers.host)
+  return isLocalhostHost(hostNameFromHeader(hostHeader))
+}
+
+export function getLocalAuthBypassUser(): AuthUser {
+  return createLocalAuthBypassUser()
 }
 
 export function authUserFromRow(row: UserRow): AuthUser {

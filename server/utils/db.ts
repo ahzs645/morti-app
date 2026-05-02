@@ -90,6 +90,23 @@ export async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS email_send_events_email_created_idx ON email_send_events(email_normalized, created_at DESC);
       CREATE INDEX IF NOT EXISTS email_send_events_ip_created_idx ON email_send_events(ip_hash, created_at DESC);
 
+      CREATE TABLE IF NOT EXISTS ai_generation_events (
+        id bigserial PRIMARY KEY,
+        user_id text,
+        ip_hash text NOT NULL,
+        model text NOT NULL,
+        prompt_hash text NOT NULL,
+        status text NOT NULL DEFAULT 'started',
+        error_code text,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      ALTER TABLE ai_generation_events ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'started';
+      ALTER TABLE ai_generation_events ADD COLUMN IF NOT EXISTS error_code text;
+
+      CREATE INDEX IF NOT EXISTS ai_generation_events_user_created_idx ON ai_generation_events(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS ai_generation_events_ip_created_idx ON ai_generation_events(ip_hash, created_at DESC);
+
       CREATE TABLE IF NOT EXISTS projects (
         id text PRIMARY KEY,
         owner_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,

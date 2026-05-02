@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type * as Y from 'yjs'
+import type { AiFurnitureDraft, AiFurnitureGenerateResponse } from '~~/shared/domain/ai-furniture'
+import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
 import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
 import type { FurnitureConfig, FurnitureModule, ModuleType } from '~~/shared/domain/types'
 import { compileAssembly } from '~~/shared/domain/assembly'
@@ -9,6 +11,7 @@ import {
   readFurnitureDoc,
   removeColumn,
   removeModule,
+  replaceFurnitureDoc,
   setColumnWidth,
   setConfigValue,
   setDrawerCount,
@@ -31,6 +34,11 @@ const emit = defineEmits<{
   (e: 'update:selectedModules', value: { id: string }[]): void
   (e: 'update:zoomPercent', value: number): void
 }>()
+
+const runtimeConfig = useRuntimeConfig()
+const aiFurnitureEnabled = computed<boolean>(
+  () => runtimeConfig.public.features?.promptFurniture === true,
+)
 
 // --- Reactive snapshot of the doc ---
 const snapshot = ref(readFurnitureDoc(props.ydoc))
@@ -382,6 +390,41 @@ const settingsOpen = ref(false)
 const copiedConfig = ref(false)
 let copiedConfigTimer: ReturnType<typeof setTimeout> | undefined
 
+const aiBuildOpen = ref(false)
+const aiPrompt = ref('')
+const aiLoading = ref(false)
+const aiError = ref('')
+const aiDraft = ref<AiFurnitureDraft | null>(null)
+const aiPromptInputRef = ref<HTMLTextAreaElement | null>(null)
+let aiRequestSeq = 0
+let aiAbortController: AbortController | null = null
+
+const aiPromptLength = computed(() => aiPrompt.value.trim().length)
+const aiDraftColumnCount = computed(() => aiDraft.value?.doc.columns.length ?? 0)
+const aiDraftModuleCount = computed(() =>
+  aiDraft.value?.doc.columns.reduce((sum, column) => sum + column.modules.length, 0) ?? 0,
+)
+const aiPromptOverLimit = computed(() => aiPromptLength.value > AI_FURNITURE_PROMPT_MAX_LENGTH)
+const aiCanGenerate = computed(() =>
+  aiPromptLength.value > 0
+  && !aiPromptOverLimit.value
+  && !aiLoading.value,
+)
+const aiPromptExamples = [
+  {
+    label: 'Media console',
+    prompt: 'A 1.8m wide media console with 6 modules, doors on both sides, and drawers in the middle.',
+  },
+  {
+    label: 'Bookshelf',
+    prompt: 'A tall bookshelf with 4 even columns, mostly open shelves, and two lower drawers.',
+  },
+  {
+    label: 'Wardrobe',
+    prompt: 'A wardrobe with 3 wide columns, full-height doors on the sides, and stacked drawers in the center.',
+  },
+]
+
 watch(selectedCount, (count) => {
   if (count === 0) return
   settingsOpen.value = false
@@ -476,6 +519,99 @@ function configJson() {
   return JSON.stringify(values, null, 2)
 }
 
+async function openAiBuilder() {
+  aiError.value = ''
+  aiDraft.value = null
+  aiBuildOpen.value = true
+  await nextTick()
+  aiPromptInputRef.value?.focus()
+}
+
+async function useAiPromptExample(prompt: string) {
+  if (aiLoading.value) return
+  aiPrompt.value = prompt
+  aiError.value = ''
+  aiDraft.value = null
+  await nextTick()
+  aiPromptInputRef.value?.focus()
+}
+
+function abortAiGeneration() {
+  aiRequestSeq++
+  aiAbortController?.abort()
+  aiAbortController = null
+  aiLoading.value = false
+}
+
+watch(aiBuildOpen, (open) => {
+  if (!open) abortAiGeneration()
+})
+
+function aiFetchErrorMessage(err: unknown): string {
+  const error = err as {
+    statusMessage?: string
+    message?: string
+    data?: { statusMessage?: string, message?: string }
+  } | null
+  return error?.data?.statusMessage
+    || error?.statusMessage
+    || error?.data?.message
+    || error?.message
+    || 'Could not generate furniture.'
+}
+
+async function generateAiFurniture() {
+  const prompt = aiPrompt.value.trim()
+  aiError.value = ''
+  if (!prompt) {
+    aiError.value = 'Enter a prompt.'
+    return
+  }
+  if (prompt.length > AI_FURNITURE_PROMPT_MAX_LENGTH) {
+    aiError.value = `Prompt must be ${AI_FURNITURE_PROMPT_MAX_LENGTH} characters or fewer.`
+    return
+  }
+  aiAbortController?.abort()
+  const requestSeq = ++aiRequestSeq
+  const controller = new AbortController()
+  aiAbortController = controller
+  aiDraft.value = null
+  aiLoading.value = true
+  try {
+    const response = await $fetch<AiFurnitureGenerateResponse>('/api/ai/furniture/generate', {
+      method: 'POST',
+      signal: controller.signal,
+      body: {
+        prompt,
+        current: readFurnitureDoc(props.ydoc),
+        mode: 'replace',
+      },
+    })
+    if (requestSeq !== aiRequestSeq) return
+    aiDraft.value = response.draft
+  }
+  catch (err: unknown) {
+    if (requestSeq !== aiRequestSeq || controller.signal.aborted) return
+    aiDraft.value = null
+    aiError.value = aiFetchErrorMessage(err)
+  }
+  finally {
+    if (requestSeq === aiRequestSeq) {
+      aiLoading.value = false
+      aiAbortController = null
+    }
+  }
+}
+
+function applyAiFurnitureDraft() {
+  if (!aiDraft.value) return
+  replaceFurnitureDoc(props.ydoc, aiDraft.value.doc)
+  setSelection([])
+  aiBuildOpen.value = false
+  aiDraft.value = null
+  aiError.value = ''
+}
+
 async function copyConfigJson() {
   const json = configJson()
   if (navigator.clipboard?.writeText) {
@@ -537,6 +673,7 @@ function onSelectedDrawerCountCommit(event: Event) {
 
 if (getCurrentScope()) {
   onScopeDispose(() => {
+    abortAiGeneration()
     if (copiedConfigTimer) clearTimeout(copiedConfigTimer)
   })
 }
@@ -565,7 +702,7 @@ if (getCurrentScope()) {
     <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-6 sm:px-3 sm:pb-3 sm:pt-10">
       <div
         class="pointer-events-auto flex w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-xl bg-elevated shadow-lg ring-1 ring-default/60"
-        :class="selectedCount > 0 ? 'max-h-[min(14rem,36dvh)] sm:max-h-[min(16rem,42vh)]' : 'max-h-[min(7rem,26dvh)] sm:max-h-[min(16rem,42vh)]'"
+        :class="selectedCount > 0 ? 'max-h-[min(14rem,36dvh)] sm:max-h-[min(16rem,42vh)]' : 'max-h-[min(15rem,42dvh)] sm:max-h-[min(18rem,46vh)]'"
       >
         <div class="inspector-root grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-muted">
           <div
@@ -590,9 +727,21 @@ if (getCurrentScope()) {
               class="grid gap-3"
             >
               <article class="grid gap-3 rounded-lg bg-default p-3 text-sm shadow-sm">
-                <h2 class="text-balance font-medium text-highlighted tabular-nums">
-                  {{ selectedCount }} selected
-                </h2>
+                <div class="flex min-w-0 items-center justify-between gap-2">
+                  <h2 class="min-w-0 text-balance font-medium text-highlighted tabular-nums">
+                    {{ selectedCount }} selected
+                  </h2>
+                  <UButton
+                    v-if="aiFurnitureEnabled"
+                    color="primary"
+                    icon="i-lucide-sparkles"
+                    label="AI build"
+                    size="xs"
+                    variant="solid"
+                    class="min-h-8 shrink-0 rounded-full px-3 shadow-sm transition-transform duration-150 active:scale-[0.97]"
+                    @click="openAiBuilder"
+                  />
+                </div>
 
                 <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
                   <dt class="self-center text-muted">
@@ -682,8 +831,31 @@ if (getCurrentScope()) {
 
             <div
               v-else
-              class="grid min-h-0 min-w-0"
+              class="grid min-h-0 min-w-0 gap-2"
             >
+              <button
+                v-if="aiFurnitureEnabled"
+                type="button"
+                class="group flex min-h-14 w-full min-w-0 items-center gap-3 rounded-xl bg-primary px-3 py-2.5 text-left text-inverted shadow-md shadow-primary/20 ring-1 ring-inset ring-white/10 transition-[transform,box-shadow,filter] duration-150 ease-out hover:shadow-lg hover:shadow-primary/25 active:scale-[0.97]"
+                aria-label="Build furniture with AI"
+                @click="openAiBuilder"
+              >
+                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-black/15">
+                  <UIcon
+                    name="i-lucide-sparkles"
+                    class="size-5 transition-transform duration-150 ease-out group-hover:scale-110"
+                  />
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm font-semibold leading-5 text-pretty">Build with AI</span>
+                  <span class="block truncate text-xs leading-4 opacity-80">Describe the cabinet and preview it before applying.</span>
+                </span>
+                <UIcon
+                  name="i-lucide-arrow-right"
+                  class="size-4 shrink-0 opacity-80 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                />
+              </button>
+
               <div
                 class="relative min-h-0 min-w-0 cursor-pointer transition-transform duration-150 active:scale-[0.97]"
                 @click="settingsOpen = true"
@@ -792,6 +964,171 @@ if (getCurrentScope()) {
         </div>
       </div>
     </div>
+
+    <AppDialog
+      v-model:open="aiBuildOpen"
+      title="Build with AI"
+      description="Describe the cabinet you want. You can preview the layout before it replaces the current design."
+      size="lg"
+    >
+      <div class="grid gap-4">
+        <div class="grid gap-3 rounded-xl bg-muted p-3 shadow-sm ring-1 ring-default/60">
+          <div class="flex min-w-0 items-center justify-between gap-3">
+            <label
+              for="ai-build-prompt"
+              class="text-sm font-medium text-highlighted"
+            >
+              Prompt
+            </label>
+            <span
+              class="text-[11px] tabular-nums"
+              :class="aiPromptOverLimit ? 'text-error' : 'text-muted'"
+            >
+              {{ aiPromptLength }} / {{ AI_FURNITURE_PROMPT_MAX_LENGTH }}
+            </span>
+          </div>
+          <textarea
+            id="ai-build-prompt"
+            ref="aiPromptInputRef"
+            v-model="aiPrompt"
+            rows="5"
+            :maxlength="AI_FURNITURE_PROMPT_MAX_LENGTH"
+            placeholder="e.g. 1.8m wide media console, three columns, drawers in the middle, doors on both sides"
+            :disabled="aiLoading"
+            class="block min-h-36 w-full resize-y rounded-lg bg-default px-3 py-3 text-sm leading-6 text-highlighted shadow-sm outline-none ring-1 ring-default/70 transition-[background-color,box-shadow] duration-150 placeholder:text-muted focus:bg-elevated focus:ring-2 focus:ring-primary/70 disabled:cursor-not-allowed disabled:opacity-60"
+            @keydown.meta.enter.prevent="generateAiFurniture"
+            @keydown.ctrl.enter.prevent="generateAiFurniture"
+          />
+
+          <div class="flex min-w-0 flex-wrap gap-1.5">
+            <button
+              v-for="example in aiPromptExamples"
+              :key="example.label"
+              type="button"
+              class="min-h-8 rounded-full bg-elevated px-3 text-xs font-medium text-toned shadow-sm ring-1 ring-default/60 transition-[transform,background-color,color] duration-150 hover:bg-accented hover:text-highlighted active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="aiLoading"
+              @click="useAiPromptExample(example.prompt)"
+            >
+              {{ example.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <UAlert
+        v-if="aiError"
+        color="error"
+        variant="soft"
+        :title="aiError"
+      />
+
+      <div
+        v-if="aiLoading"
+        class="flex min-h-28 items-center gap-3 rounded-xl bg-muted p-4 shadow-sm ring-1 ring-default/60"
+      >
+        <UIcon
+          name="i-lucide-loader-circle"
+          class="size-5 shrink-0 animate-spin text-primary"
+        />
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-highlighted">
+            Generating layout
+          </p>
+          <p class="text-pretty text-xs text-muted">
+            Checking dimensions, modules, and hardware clearances.
+          </p>
+        </div>
+      </div>
+
+      <div
+        v-if="aiDraft"
+        class="grid gap-3 rounded-xl bg-default p-3 shadow-sm ring-1 ring-default/60 sm:grid-cols-[minmax(0,1.1fr)_minmax(12rem,0.9fr)]"
+      >
+        <div class="min-w-0 overflow-hidden rounded-lg bg-muted p-2 ring-1 ring-default/50">
+          <ProjectPreview
+            :columns="aiDraft.doc.columns"
+            :config="aiDraft.doc.config"
+          />
+        </div>
+        <div class="grid gap-2 text-xs">
+          <p class="text-[11px] font-semibold uppercase tracking-normal text-muted">
+            Preview summary
+          </p>
+          <p class="text-pretty text-highlighted">
+            {{ aiDraft.summary }}
+          </p>
+          <div class="flex flex-wrap gap-1.5">
+            <UBadge
+              color="neutral"
+              variant="soft"
+              size="sm"
+            >
+              {{ aiDraftColumnCount }} columns
+            </UBadge>
+            <UBadge
+              color="neutral"
+              variant="soft"
+              size="sm"
+            >
+              {{ aiDraftModuleCount }} modules
+            </UBadge>
+          </div>
+          <ul
+            v-if="aiDraft.warnings.length > 0"
+            class="grid gap-1 rounded-lg bg-muted p-2 text-muted"
+          >
+            <li
+              v-for="warning in aiDraft.warnings"
+              :key="warning"
+              class="text-pretty"
+            >
+              {{ warning }}
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <template #footer="{ close }">
+        <div class="grid w-full grid-cols-2 gap-2">
+          <UButton
+            :label="aiDraft ? 'Close' : 'Cancel'"
+            color="neutral"
+            variant="outline"
+            class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
+            :disabled="aiLoading"
+            @click="close()"
+          />
+          <UButton
+            v-if="!aiDraft"
+            label="Generate layout"
+            icon="i-lucide-sparkles"
+            class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
+            :loading="aiLoading"
+            :disabled="!aiCanGenerate"
+            @click="generateAiFurniture"
+          />
+          <UButton
+            v-else
+            label="Apply"
+            icon="i-lucide-check"
+            class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
+            :disabled="aiLoading"
+            @click="applyAiFurnitureDraft"
+          />
+        </div>
+        <UButton
+          v-if="aiDraft"
+          block
+          label="Regenerate"
+          icon="i-lucide-refresh-cw"
+          color="neutral"
+          variant="soft"
+          class="mt-2 min-h-10 justify-center transition-transform active:scale-[0.97]"
+          :loading="aiLoading"
+          @click="generateAiFurniture"
+        />
+      </template>
+    </AppDialog>
   </div>
 </template>
 

@@ -1,4 +1,5 @@
 import type { AuthUser } from '~~/shared/domain/types'
+import { isLocalAuthBypassUser } from '~~/shared/domain/auth'
 
 const CACHED_USER_KEY = 'morti-auth-user'
 
@@ -39,6 +40,8 @@ export function useAuth() {
 
   const isAuthed = computed(() => !!user.value?.id)
   const isVerified = computed(() => isEmailVerified(user.value))
+  const isLocalBypass = computed(() => isLocalAuthBypassUser(user.value))
+  const isCloudAuthed = computed(() => isAuthed.value && isVerified.value && !isLocalBypass.value)
 
   async function refreshUser(): Promise<AuthUser | null> {
     loading.value = true
@@ -102,6 +105,8 @@ export function useAuth() {
     loading,
     isAuthed,
     isVerified,
+    isLocalBypass,
+    isCloudAuthed,
     refreshUser,
     requestOtp,
     authWithOtp,
