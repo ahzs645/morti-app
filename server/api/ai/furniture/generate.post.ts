@@ -20,6 +20,7 @@ const AI_USER_PER_DAY = 25
 const AI_IP_PER_HOUR = 30
 const AI_PLATFORM_PER_DAY = 1_000
 const CLOUDFLARE_TIMEOUT_MS = 90_000
+const CLOUDFLARE_MAX_OUTPUT_TOKENS = 1_000
 
 interface GenerateBody {
   prompt?: unknown
@@ -162,50 +163,64 @@ function extractModelPayload(response: unknown): unknown {
   throw new Error('Cloudflare returned no model text.')
 }
 
-function currentDesignSummary(current: FurnitureDoc): string {
+function roundMetric(value: number): number {
+  return Number.isFinite(value) ? Math.round(value * 1_000) / 1_000 : 0
+}
+
+function compactConfig(current: FurnitureDoc) {
+  const c = current.config
+  return {
+    d: c.depth,
+    pt: c.panelThickness,
+    bt: c.backPanelThickness,
+    fc: c.frontClearance,
+    so: c.sidePanelOverhang,
+    pd: c.pullHoleDiameter,
+    pe: c.pullHoleEdgeInset,
+    pg: c.pullHolePairGap,
+    cw: [c.minColumnWidth, c.maxColumnWidth],
+    mh: [c.minModuleHeight, c.maxModuleHeight],
+    dh: [c.minDrawerHeight, c.maxDrawerHeight],
+  }
+}
+
+function compactModuleType(type: string): string {
+  if (type === 'drawer') return 'd'
+  if (type === 'doors') return 'D'
+  if (type === 'left-door') return 'l'
+  if (type === 'right-door') return 'r'
+  return 's'
+}
+
+function compactCurrentDesign(current: FurnitureDoc): string {
   return JSON.stringify({
-    totalWidth: current.columns.reduce((sum, column) => sum + column.width, 0),
-    maxColumnHeight: current.columns.reduce((max, column) => Math.max(max, column.modules.reduce((sum, module) => sum + module.height, 0)), 0),
-    config: current.config,
-    columns: current.columns.map(column => ({
-      width: column.width,
-      modules: column.modules.map(module => ({
-        type: module.type,
-        height: module.height,
-        ...(module.type === 'drawer' ? { drawerCount: module.drawerCount ?? 1 } : {}),
+    g: compactConfig(current),
+    tw: roundMetric(current.columns.reduce((sum, column) => sum + column.width, 0)),
+    th: roundMetric(current.columns.reduce((max, column) => Math.max(max, column.modules.reduce((sum, module) => sum + module.height, 0)), 0)),
+    c: current.columns.map(column => ({
+      w: column.width,
+      m: column.modules.map(module => ({
+        t: compactModuleType(module.type),
+        h: module.height,
+        ...(module.type === 'drawer' ? { n: module.drawerCount ?? 1 } : {}),
       })),
     })),
   })
 }
 
 function furnitureInstructions(): string {
-  return [
-    'You generate cabinet and storage furniture layouts for Morti.',
-    'Return only valid JSON that matches the provided schema.',
-    'Use metres for every dimension.',
-    'Supported module types are only: shelf, drawer, doors, left-door, right-door.',
-    'A column is a vertical bay. Modules inside a column are stacked bottom-to-top.',
-    'Use doors for hinged cabinet-door bays. Use left-door or right-door only when the user asks for a single hinged leaf.',
-    'Use one drawer module with drawerCount for a drawer bank; do not split a two-drawer bank into two separate drawer modules unless another module is between them.',
-    'Use shelf only for open shelf areas or open bookcase sections.',
-    'The sum of column widths should match the requested overall width when one is provided.',
-    'For media consoles, prefer 0.4m to 0.65m total height. For bookcases and wardrobes, stack modules to reach the requested height.',
-    'Do not invent chairs, tables, curved panels, legs, meshes, materials, hardware, or arbitrary geometry.',
-    'Prefer practical cabinet dimensions, 1 to 8 columns, and 1 to 12 stacked modules per column.',
-    'Each column needs a width. Each module needs a type and height. Drawer modules may include drawerCount.',
-    'When the user asks for unsupported furniture, approximate it as a cabinet/storage unit and mention the approximation in warnings.',
-  ].join(' ')
+  return 'Return JSON only: {c:[{w,m:[{t,h,n?}]}],g?,s?,w?}. Units meters. t=s shelf,d drawer,D paired doors,l left door,r right door. Modules are bottom-to-top. Use one d+n for a drawer bank. Fit requested width/height; practical cabinet/storage only; 1-8 cols; 1-12 modules/col. g keys: d depth,pt panel,bt back,fc front gap,so side overhang,pd pull diameter,pe pull inset,pg pull gap.'
 }
 
 function makeInput(prompt: string, current: FurnitureDoc, repairError?: string, badOutput?: unknown): string {
   const parts = [
-    `User prompt:\n${prompt}`,
-    `Current Morti design, for constraints and defaults:\n${currentDesignSummary(current)}`,
+    `P:${prompt}`,
+    `C:${compactCurrentDesign(current)}`,
   ]
   if (repairError) {
-    parts.push(`Previous output failed validation:\n${repairError}`)
-    parts.push(`Previous output excerpt:\n${JSON.stringify(badOutput).slice(0, 1_500)}`)
-    parts.push('Repair it and return a complete valid JSON object.')
+    parts.push(`E:${repairError.replace(/\s+/g, ' ').slice(0, 260)}`)
+    parts.push(`B:${JSON.stringify(badOutput).slice(0, 700)}`)
+    parts.push('Fix and return complete JSON.')
   }
   return parts.join('\n\n')
 }
@@ -214,7 +229,7 @@ async function callCloudflareAi(prompt: string, current: FurnitureDoc, repairErr
   const config = useRuntimeConfig()
   const accountId = String(process.env.CLOUDFLARE_ACCOUNT_ID || config.cloudflareAccountId || '').trim()
   const apiToken = String(process.env.CLOUDFLARE_AI_API_TOKEN || process.env.CLOUDFLARE_AUTH_TOKEN || config.cloudflareAiApiToken || '').trim()
-  const model = String(process.env.CLOUDFLARE_AI_MODEL || config.cloudflareAiModel || '@cf/openai/gpt-oss-20b').trim()
+  const model = String(process.env.CLOUDFLARE_AI_MODEL || config.cloudflareAiModel || '@cf/openai/gpt-oss-120b').trim()
   if (!accountId || !apiToken) {
     throw createError({ statusCode: 503, statusMessage: 'Cloudflare AI is not configured.' })
   }
@@ -233,9 +248,9 @@ async function callCloudflareAi(prompt: string, current: FurnitureDoc, repairErr
         model,
         instructions: furnitureInstructions(),
         input: makeInput(prompt, current, repairError, badOutput),
-        max_tokens: 3_000,
-        temperature: 0.2,
-        top_p: 0.9,
+        max_tokens: CLOUDFLARE_MAX_OUTPUT_TOKENS,
+        temperature: 0.15,
+        top_p: 0.85,
         response_format: {
           type: 'json_schema',
           json_schema: AI_FURNITURE_RESPONSE_SCHEMA,
@@ -288,7 +303,7 @@ function validateDraft(payload: unknown, current: FurnitureDoc, prompt: string) 
 
 export default defineEventHandler(async (event): Promise<AiFurnitureGenerateResponse> => {
   const config = useRuntimeConfig()
-  const model = String(process.env.CLOUDFLARE_AI_MODEL || config.cloudflareAiModel || '@cf/openai/gpt-oss-20b').trim()
+  const model = String(process.env.CLOUDFLARE_AI_MODEL || config.cloudflareAiModel || '@cf/openai/gpt-oss-120b').trim()
   const caller = await getCaller(event)
   const body = await readBody<GenerateBody>(event)
   const prompt = typeof body.prompt === 'string' ? body.prompt.replace(/\s+/g, ' ').trim() : ''

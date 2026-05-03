@@ -24,11 +24,19 @@ export interface AiFurnitureGenerateResponse {
   draft: AiFurnitureDraft
 }
 
-export const AI_FURNITURE_PROMPT_MAX_LENGTH = 2_000
+export const AI_FURNITURE_PROMPT_MAX_LENGTH = 1_200
 export const AI_FURNITURE_MAX_COLUMNS = 8
 export const AI_FURNITURE_MAX_MODULES_PER_COLUMN = 12
 
 const MODULE_TYPES: ModuleType[] = ['shelf', 'drawer', 'doors', 'left-door', 'right-door']
+const COMPACT_MODULE_TYPES = ['s', 'd', 'D', 'l', 'r'] as const
+const COMPACT_TO_MODULE_TYPE: Record<string, ModuleType> = {
+  s: 'shelf',
+  d: 'drawer',
+  D: 'doors',
+  l: 'left-door',
+  r: 'right-door',
+}
 const CONFIG_PATCH_KEYS: (keyof FurnitureConfig)[] = [
   'depth',
   'panelThickness',
@@ -39,6 +47,16 @@ const CONFIG_PATCH_KEYS: (keyof FurnitureConfig)[] = [
   'pullHoleEdgeInset',
   'pullHolePairGap',
 ]
+const COMPACT_CONFIG_PATCH_KEYS: Record<string, keyof FurnitureConfig> = {
+  d: 'depth',
+  pt: 'panelThickness',
+  bt: 'backPanelThickness',
+  fc: 'frontClearance',
+  so: 'sidePanelOverhang',
+  pd: 'pullHoleDiameter',
+  pe: 'pullHoleEdgeInset',
+  pg: 'pullHolePairGap',
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -64,7 +82,10 @@ function clamp(value: number, min: number, max: number): number {
 
 function normalizeModuleType(value: unknown): ModuleType {
   if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
+    const trimmed = value.trim()
+    const compact = COMPACT_TO_MODULE_TYPE[trimmed]
+    if (compact) return compact
+    const normalized = trimmed.toLowerCase()
     if (normalized === 'drawers') return 'drawer'
     if (MODULE_TYPES.includes(normalized as ModuleType)) return normalized as ModuleType
   }
@@ -204,6 +225,15 @@ function normalizeConfigPatch(input: unknown, currentConfig: FurnitureConfig, wa
     }
     patch[key] = value as FurnitureConfig[typeof key]
   }
+  for (const [alias, key] of Object.entries(COMPACT_CONFIG_PATCH_KEYS)) {
+    if (!(alias in input)) continue
+    const value = finiteNumber(input[alias])
+    if (value == null || value < 0) {
+      warnings.push(`Ignored invalid ${key}.`)
+      continue
+    }
+    patch[key] = value as FurnitureConfig[typeof key]
+  }
   return snapConfig({ ...currentConfig, ...patch })
 }
 
@@ -242,6 +272,22 @@ function normalizeModule(raw: unknown, config: FurnitureConfig, warnings: string
   return module
 }
 
+function normalizeCompactModule(raw: unknown, config: FurnitureConfig, warnings: string[]): FurnitureModule {
+  if (Array.isArray(raw)) {
+    return normalizeModule({
+      type: raw[0],
+      height: raw[1],
+      drawerCount: raw[2],
+    }, config, warnings)
+  }
+  const source = isRecord(raw) ? raw : {}
+  return normalizeModule({
+    type: source.t ?? source.type,
+    height: source.h ?? source.height,
+    drawerCount: source.n ?? source.drawerCount,
+  }, config, warnings)
+}
+
 function normalizeColumn(raw: unknown, config: FurnitureConfig, warnings: string[]): FurnitureColumn {
   const source = isRecord(raw) ? raw : {}
   const rawWidth = finiteNumber(source.width)
@@ -252,6 +298,25 @@ function normalizeColumn(raw: unknown, config: FurnitureConfig, warnings: string
   const modules = (rawModules.length > 0 ? rawModules : [{ type: 'shelf', height: Math.max(0.3, config.minModuleHeight) }])
     .slice(0, AI_FURNITURE_MAX_MODULES_PER_COLUMN)
     .map(item => normalizeModule(item, config, warnings))
+  return { width, modules }
+}
+
+function normalizeCompactColumn(raw: unknown, config: FurnitureConfig, warnings: string[]): FurnitureColumn {
+  if (Array.isArray(raw)) {
+    return normalizeColumn({
+      width: raw[0],
+      modules: Array.isArray(raw[1]) ? raw[1] : [],
+    }, config, warnings)
+  }
+  const source = isRecord(raw) ? raw : {}
+  const rawWidth = finiteNumber(source.w ?? source.width)
+  const width = snapMetric(clamp(rawWidth ?? config.minColumnWidth, config.minColumnWidth, config.maxColumnWidth))
+  const rawModules = Array.isArray(source.m) ? source.m : Array.isArray(source.modules) ? source.modules : []
+  if (rawModules.length === 0) warnings.push('Added a default shelf where the model returned an empty column.')
+  if (rawModules.length > AI_FURNITURE_MAX_MODULES_PER_COLUMN) warnings.push(`Limited a column to ${AI_FURNITURE_MAX_MODULES_PER_COLUMN} modules.`)
+  const modules = (rawModules.length > 0 ? rawModules : [{ t: 's', h: Math.max(0.3, config.minModuleHeight) }])
+    .slice(0, AI_FURNITURE_MAX_MODULES_PER_COLUMN)
+    .map(item => normalizeCompactModule(item, config, warnings))
   return { width, modules }
 }
 
@@ -271,8 +336,31 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
   }
 }
 
+function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, currentConfig?: FurnitureConfig): AiFurnitureDraft {
+  const warnings = cleanWarnings(input.w ?? input.warnings)
+  const config = normalizeConfigPatch(input.g ?? input.config, currentConfig ?? DEFAULT_FURNITURE_CONFIG, warnings)
+  const rawColumns = Array.isArray(input.c) ? input.c : []
+  if (rawColumns.length === 0) throw new Error('The model did not return any columns.')
+  if (rawColumns.length > AI_FURNITURE_MAX_COLUMNS) warnings.push(`Limited the result to ${AI_FURNITURE_MAX_COLUMNS} columns.`)
+  const columns = rawColumns
+    .slice(0, AI_FURNITURE_MAX_COLUMNS)
+    .map(item => normalizeCompactColumn(item, config, warnings))
+  const moduleCount = columns.reduce((sum, column) => sum + column.modules.length, 0)
+  return {
+    doc: {
+      schemaVersion: DESIGN_SCHEMA_VERSION,
+      lastAppliedMigrationId: null,
+      config,
+      columns,
+    },
+    summary: cleanSummary(input.s ?? input.summary, `Generated ${columns.length}-column furniture layout with ${moduleCount} modules.`),
+    warnings: [...new Set(warnings)].slice(0, 8),
+  }
+}
+
 export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: FurnitureConfig): AiFurnitureDraft {
   if (!isRecord(input)) throw new Error('The model returned an invalid furniture object.')
+  if (Array.isArray(input.c)) return normalizeCompactAiFurnitureDraft(input, currentConfig)
   const warnings = cleanWarnings(input.warnings)
   const config = normalizeConfigPatch(input.config, currentConfig ?? DEFAULT_FURNITURE_CONFIG, warnings)
   const rawColumns = Array.isArray(input.columns) ? input.columns : []
@@ -297,46 +385,46 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
 export const AI_FURNITURE_RESPONSE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['summary', 'columns'],
+  required: ['c'],
   properties: {
-    summary: { type: 'string', maxLength: 240 },
-    warnings: {
+    s: { type: 'string', maxLength: 120 },
+    w: {
       type: 'array',
-      maxItems: 6,
-      items: { type: 'string', maxLength: 180 },
+      maxItems: 4,
+      items: { type: 'string', maxLength: 100 },
     },
-    config: {
+    g: {
       type: 'object',
       additionalProperties: false,
       properties: Object.fromEntries(
-        CONFIG_PATCH_KEYS.map(key => [key, { type: 'number', minimum: 0 }]),
+        Object.keys(COMPACT_CONFIG_PATCH_KEYS).map(key => [key, { type: 'number', minimum: 0 }]),
       ),
     },
-    columns: {
+    c: {
       type: 'array',
       minItems: 1,
       maxItems: AI_FURNITURE_MAX_COLUMNS,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['width', 'modules'],
+        required: ['w', 'm'],
         properties: {
-          width: { type: 'number', minimum: 0.12, maximum: 1.2 },
-          modules: {
+          w: { type: 'number', minimum: 0.12, maximum: 1.2 },
+          m: {
             type: 'array',
             minItems: 1,
             maxItems: AI_FURNITURE_MAX_MODULES_PER_COLUMN,
             items: {
               type: 'object',
               additionalProperties: false,
-              required: ['type', 'height'],
+              required: ['t', 'h'],
               properties: {
-                type: {
+                t: {
                   type: 'string',
-                  enum: MODULE_TYPES,
+                  enum: COMPACT_MODULE_TYPES,
                 },
-                height: { type: 'number', minimum: 0.08, maximum: 1.2 },
-                drawerCount: { type: 'integer', minimum: DRAWER_COUNT_MIN, maximum: DRAWER_COUNT_MAX },
+                h: { type: 'number', minimum: 0.08, maximum: 1.2 },
+                n: { type: 'integer', minimum: DRAWER_COUNT_MIN, maximum: DRAWER_COUNT_MAX },
               },
             },
           },

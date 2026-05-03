@@ -66,7 +66,7 @@ export default defineNuxtConfig({
     appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
     cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
     cloudflareAiApiToken: process.env.CLOUDFLARE_AI_API_TOKEN || process.env.CLOUDFLARE_AUTH_TOKEN || '',
-    cloudflareAiModel: process.env.CLOUDFLARE_AI_MODEL || '@cf/openai/gpt-oss-20b',
+    cloudflareAiModel: process.env.CLOUDFLARE_AI_MODEL || '@cf/openai/gpt-oss-120b',
     aiFurnitureAllowLocalUnauth: process.env.AI_FURNITURE_ALLOW_LOCAL_UNAUTH === 'true',
     localAuthBypass: process.env.LOCAL_AUTH_BYPASS === 'true',
     public: {
@@ -78,7 +78,8 @@ export default defineNuxtConfig({
       appName: 'Morti',
       features: {
         projectStyleTab: false,
-        promptFurniture: false,
+        promptFurniture: process.env.NUXT_PUBLIC_FEATURES_PROMPT_FURNITURE === 'true'
+          || process.env.NUXT_PUBLIC_FEATURE_PROMPT_FURNITURE === 'true',
       },
       three: {
         maxTextureDimension: 16384,
