@@ -3,12 +3,20 @@ interface Props {
   splitRatio?: number
   dividerLocked?: boolean
   collapseInputs?: boolean
+  reverseOnMobileStack?: boolean
+  reverseOnDesktop?: boolean
+  hideDivider?: boolean
+  inputsBasis?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   splitRatio: 0.55,
   dividerLocked: false,
   collapseInputs: false,
+  reverseOnMobileStack: false,
+  reverseOnDesktop: false,
+  hideDivider: false,
+  inputsBasis: '',
 })
 
 const emit = defineEmits<{
@@ -72,7 +80,9 @@ function onPointerMove(event: PointerEvent) {
   const rect = containerRef.value.getBoundingClientRect()
   const axisSize = isStacked.value ? rect.height : rect.width
   if (axisSize <= 0) return
-  const delta = (isStacked.value ? event.clientY : event.clientX) - startClient
+  const rawDelta = (isStacked.value ? event.clientY : event.clientX) - startClient
+  const reversed = isStacked.value && props.reverseOnMobileStack
+  const delta = reversed ? -rawDelta : rawDelta
   const minPane = Math.min(MIN_PANE_PX, axisSize / 2)
   const inputPx = startInputPx + delta
   const clampedInputPx = Math.min(Math.max(inputPx, minPane), axisSize - minPane)
@@ -93,12 +103,18 @@ const inputsStyle = computed(() => {
   if (props.collapseInputs) {
     return { flex: '0 0 0', minWidth: 0, overflow: 'hidden' }
   }
+  if (props.inputsBasis && !isStacked.value) {
+    return { flex: `0 0 ${props.inputsBasis}`, minWidth: 0, maxWidth: '100%' }
+  }
   return { flex: '1 1 0' }
 })
 
 const previewStyle = computed(() => {
   if (props.collapseInputs) {
     return { flex: '1 1 100%', minWidth: 0, maxWidth: '100%' }
+  }
+  if (props.inputsBasis && !isStacked.value) {
+    return { flex: '1 1 0', minWidth: 0 }
   }
   return { flex: `0 0 ${internalRatio.value * 100}%` }
 })
@@ -108,7 +124,12 @@ const previewStyle = computed(() => {
   <div
     ref="containerRef"
     class="editor-split"
-    :class="{ 'is-dragging': isDragging, 'editor-split--inputs-collapsed': props.collapseInputs }"
+    :class="{
+      'is-dragging': isDragging,
+      'editor-split--inputs-collapsed': props.collapseInputs,
+      'editor-split--mobile-reverse': props.reverseOnMobileStack,
+      'editor-split--desktop-reverse': props.reverseOnDesktop,
+    }"
   >
     <div
       class="pane pane-inputs"
@@ -123,7 +144,7 @@ const previewStyle = computed(() => {
     </div>
 
     <div
-      v-show="!props.collapseInputs"
+      v-show="!props.collapseInputs && !props.hideDivider"
       class="divider"
       :class="{ 'divider-locked': props.dividerLocked }"
       @pointerdown.prevent="beginDrag"
@@ -158,9 +179,18 @@ const previewStyle = computed(() => {
   -moz-user-select: none;
   background-color: var(--ui-bg);
 }
+.editor-split.editor-split--mobile-reverse {
+  flex-direction: column-reverse;
+}
 @media (min-width: 768px) {
-  .editor-split {
+  .editor-split,
+  .editor-split.editor-split--mobile-reverse {
     flex-direction: row;
+  }
+
+  .editor-split.editor-split--desktop-reverse,
+  .editor-split.editor-split--mobile-reverse.editor-split--desktop-reverse {
+    flex-direction: row-reverse;
   }
 }
 .editor-split.is-dragging {

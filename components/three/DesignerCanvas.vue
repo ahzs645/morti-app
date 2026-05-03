@@ -33,10 +33,14 @@ const SPACE_VH = 0.022
 const SPACE_HH = -0.0325
 const SPACE_GH = 0.095
 const FIT_MULTIPLIER = 1.12
+const FIT_MULTIPLIER_MOBILE = 1.25
 const FRAME_LERP_TAU = 10
 const GIZMO_SIZE_PX = 80
 const GIZMO_CONTENT_SCALE = 1.12
 const DESIGNER_WHEEL_ZOOM_MAX_DISTANCE_RATIO = 4.5
+const DESIGNER_WHEEL_ZOOM_MAX_DISTANCE_RATIO_MOBILE = 6
+const DESIGNER_WHEEL_ZOOM_MIN_DISTANCE_RATIO_MOBILE = 0.5
+const MOBILE_VIEWPORT_MAX_WIDTH_PX = 768
 const DESIGNER_WHEEL_ZOOM_SENSITIVITY = 0.0011
 const GRID_FADE_OUT_SECONDS = 0.14
 const GRID_FADE_IN_SECONDS = 0.35
@@ -1060,18 +1064,73 @@ function attachControls() {
   controls.addEventListener('change', onControlsChange)
   controls.addEventListener('end', emitCameraChange)
   controlsDomElement.addEventListener('wheel', onCanvasWheel, { passive: false })
+  controlsDomElement.addEventListener('touchstart', onCanvasTouchStart, { passive: false })
+  controlsDomElement.addEventListener('touchmove', onCanvasTouchMove, { passive: false })
+  controlsDomElement.addEventListener('touchend', onCanvasTouchEnd, { passive: true })
+  controlsDomElement.addEventListener('touchcancel', onCanvasTouchEnd, { passive: true })
   if (props.headlessCapture) controls.enabled = false
 }
 
+function isMobileLayout(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth < MOBILE_VIEWPORT_MAX_WIDTH_PX
+}
+
+function currentFitMultiplier(): number {
+  return isMobileLayout() ? FIT_MULTIPLIER_MOBILE : FIT_MULTIPLIER
+}
+
+function currentMaxZoomRatio(): number {
+  return isMobileLayout() ? DESIGNER_WHEEL_ZOOM_MAX_DISTANCE_RATIO_MOBILE : DESIGNER_WHEEL_ZOOM_MAX_DISTANCE_RATIO
+}
+
+function currentMinZoomRatio(): number {
+  return isMobileLayout() ? DESIGNER_WHEEL_ZOOM_MIN_DISTANCE_RATIO_MOBILE : 1
+}
+
 function onCanvasWheel(ev: WheelEvent) {
-  const maxRatio = DESIGNER_WHEEL_ZOOM_MAX_DISTANCE_RATIO
-  if (!controls || maxRatio <= 1) return
+  const maxRatio = currentMaxZoomRatio()
+  const minRatio = currentMinZoomRatio()
+  if (!controls || maxRatio <= minRatio) return
   ev.preventDefault()
   const delta = Math.max(-140, Math.min(140, ev.deltaY))
   wheelZoomDistanceRatio *= Math.exp(delta * DESIGNER_WHEEL_ZOOM_SENSITIVITY)
-  wheelZoomDistanceRatio = Math.min(maxRatio, Math.max(1, wheelZoomDistanceRatio))
+  wheelZoomDistanceRatio = Math.min(maxRatio, Math.max(minRatio, wheelZoomDistanceRatio))
   autoFitCamera()
   debouncedEmitCameraChange()
+}
+
+let pinchInitialDistance = 0
+let pinchInitialZoomRatio = 1
+
+function getTouchDistance(touches: TouchList): number {
+  if (touches.length < 2) return 0
+  const dx = touches[0].clientX - touches[1].clientX
+  const dy = touches[0].clientY - touches[1].clientY
+  return Math.hypot(dx, dy)
+}
+
+function onCanvasTouchStart(ev: TouchEvent) {
+  if (!controls || ev.touches.length !== 2) return
+  pinchInitialDistance = getTouchDistance(ev.touches)
+  pinchInitialZoomRatio = wheelZoomDistanceRatio
+}
+
+function onCanvasTouchMove(ev: TouchEvent) {
+  const maxRatio = currentMaxZoomRatio()
+  const minRatio = currentMinZoomRatio()
+  if (!controls || maxRatio <= minRatio || ev.touches.length !== 2 || pinchInitialDistance <= 0) return
+  ev.preventDefault()
+  const newDistance = getTouchDistance(ev.touches)
+  if (newDistance <= 0) return
+  const scale = newDistance / pinchInitialDistance
+  const next = pinchInitialZoomRatio / scale
+  wheelZoomDistanceRatio = Math.min(maxRatio, Math.max(minRatio, next))
+  autoFitCamera()
+  debouncedEmitCameraChange()
+}
+
+function onCanvasTouchEnd(ev: TouchEvent) {
+  if (ev.touches.length < 2) pinchInitialDistance = 0
 }
 
 function autoFitCamera() {
@@ -1091,9 +1150,9 @@ function autoFitCamera() {
   const hfov = 2 * Math.atan(Math.tan(vfov * 0.5) * camera.aspect)
   const dV = sphere.radius / Math.sin(Math.max(1e-4, vfov * 0.5))
   const dH = sphere.radius / Math.sin(Math.max(1e-4, hfov * 0.5))
-  const dist = Math.max(dV, dH, 0.001) * FIT_MULTIPLIER
+  const dist = Math.max(dV, dH, 0.001) * currentFitMultiplier()
   const baseDist = Math.max(dist, DESIGNER_ORBIT_MIN_DISTANCE_M)
-  const finalDist = baseDist * Math.min(DESIGNER_WHEEL_ZOOM_MAX_DISTANCE_RATIO, Math.max(1, wheelZoomDistanceRatio))
+  const finalDist = baseDist * Math.min(currentMaxZoomRatio(), Math.max(currentMinZoomRatio(), wheelZoomDistanceRatio))
 
   const targetForDir = controls ? controls.target : sphere.center
   const dir = new THREE.Vector3().subVectors(camera.position, targetForDir).normalize()
@@ -1587,7 +1646,7 @@ watch(() => colors.value.generation, () => {
 watch(() => props.initialCameraState, (cs) => {
   if (cameraStateKey(cs) === lastEmittedCameraStateKey) return
   restoreCameraState(cs)
-}, { deep: true })
+})
 
 // Live Y.Doc updates → rebuild
 let docObserver: (() => void) | null = null
@@ -1633,6 +1692,10 @@ onBeforeUnmount(() => {
   destroyViewHelper()
   if (controls) {
     controlsDomElement?.removeEventListener('wheel', onCanvasWheel)
+    controlsDomElement?.removeEventListener('touchstart', onCanvasTouchStart)
+    controlsDomElement?.removeEventListener('touchmove', onCanvasTouchMove)
+    controlsDomElement?.removeEventListener('touchend', onCanvasTouchEnd)
+    controlsDomElement?.removeEventListener('touchcancel', onCanvasTouchEnd)
     controls.removeEventListener('change', onControlsChange)
     controls.removeEventListener('end', emitCameraChange)
     controls.dispose()
@@ -1772,7 +1835,7 @@ watch(
     </div>
     <div
       v-if="!headlessCapture"
-      class="pointer-events-auto absolute bottom-3 right-3 z-10 sm:bottom-4 sm:right-4"
+      class="canvas-gizmo-anchor pointer-events-auto absolute bottom-3 right-3 z-10 sm:bottom-4 sm:right-4"
     >
       <div
         ref="gizmoWrapperRef"
@@ -1809,7 +1872,7 @@ watch(
             :variant="assemblyMode === 'normal' ? 'solid' : 'ghost'"
             aria-label="Normal assembly view"
             :aria-pressed="assemblyMode === 'normal'"
-            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
+            class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('normal')"
           />
           <UButton
@@ -1819,7 +1882,7 @@ watch(
             :variant="assemblyMode === 'open-doors' ? 'solid' : 'ghost'"
             aria-label="Open doors and drawers preview"
             :aria-pressed="assemblyMode === 'open-doors'"
-            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
+            class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('open-doors')"
           />
           <UButton
@@ -1829,7 +1892,7 @@ watch(
             :variant="assemblyMode === 'space-modules' ? 'solid' : 'ghost'"
             aria-label="Space modules view — pull panels apart"
             :aria-pressed="assemblyMode === 'space-modules'"
-            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
+            class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('space-modules')"
           />
         </div>
@@ -1845,7 +1908,7 @@ watch(
             :variant="renderMode === 'technical' ? 'solid' : 'ghost'"
             aria-label="Technical drawing — outlines only"
             :aria-pressed="renderMode === 'technical'"
-            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
+            class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="emit('update:renderMode', 'technical')"
           />
           <UButton
@@ -1855,7 +1918,7 @@ watch(
             :variant="renderMode === 'render-debug' ? 'solid' : 'ghost'"
             aria-label="Render debug — lit mesh with role colors"
             :aria-pressed="renderMode === 'render-debug'"
-            class="size-10 justify-center active:scale-[0.97] transition-transform duration-150"
+            class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="emit('update:renderMode', 'render-debug')"
           />
         </div>

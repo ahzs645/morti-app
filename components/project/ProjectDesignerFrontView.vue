@@ -409,7 +409,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                   >
                     <button
                       type="button"
-                      class="editor-touch-target mx-auto flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      class="editor-touch-target self-center flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-inverted shadow-sm transition-[opacity,transform] hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                       :style="{ marginBottom: `${Bt}px` }"
                       :aria-label="`Add module on top of column ${ci + 1}`"
                       @click.stop="emit('add-module-top', ci)"

@@ -1,4 +1,3 @@
-import * as Y from 'yjs'
 import type { CloudProjectRecord, LocalProjectRow, ProjectVisibility, PublicStyle } from '~~/shared/domain/types'
 import { STORES, idbPut } from '~~/shared/idb/morti-db'
 
@@ -34,8 +33,9 @@ function isDeleted(record: CloudProjectRecord): boolean {
   return typeof record.deleted_at === 'string' && record.deleted_at.length > 0
 }
 
-function mergeUpdates(local: Uint8Array | null, remote: Uint8Array): Uint8Array {
+async function mergeUpdates(local: Uint8Array | null, remote: Uint8Array): Promise<Uint8Array> {
   if (!local || local.byteLength === 0) return new Uint8Array(remote)
+  const Y = await import('yjs')
   const doc = new Y.Doc()
   Y.applyUpdate(doc, local)
   Y.applyUpdate(doc, remote)
@@ -113,7 +113,7 @@ export function useCloudProjects() {
       const remote = await fetchSnapshotBytes(record)
       if (remote && remote.byteLength > 0) {
         const localSnapshot = await local.getDesignSnapshot(projectId)
-        await local.putDesignSnapshot(projectId, mergeUpdates(localSnapshot, remote))
+        await local.putDesignSnapshot(projectId, await mergeUpdates(localSnapshot, remote))
       }
     }
     await local.listLocalProjects()

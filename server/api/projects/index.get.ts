@@ -1,14 +1,14 @@
 import { getQuery } from 'h3'
 import { requireUser } from '~~/server/utils/auth'
 import { dbQuery } from '~~/server/utils/db'
-import { projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
+import { PROJECT_METADATA_SELECT, projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   if (query.demos === 'true') {
     const result = await dbQuery<ProjectRow>(
       `
-        SELECT *
+        SELECT ${PROJECT_METADATA_SELECT}
         FROM projects
         WHERE deleted_at IS NULL
           AND is_demo = true
@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
   const includeDemos = query.includeDemos === 'true'
   const result = await dbQuery<ProjectRow>(
     `
-      SELECT *
+      SELECT ${PROJECT_METADATA_SELECT}
       FROM projects
       WHERE owner_id = $1
         AND deleted_at IS NULL

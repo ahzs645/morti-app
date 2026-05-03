@@ -93,6 +93,7 @@ const menuItems = computed(() => [
   >
     <NuxtLink
       :to="projectTo"
+      :prefetch="false"
       class="absolute inset-0 z-0 block rounded-[inherit] outline-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-inset after:ring-transparent after:transition-shadow after:duration-150 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-primary"
       :aria-labelledby="cardTitleId"
     />

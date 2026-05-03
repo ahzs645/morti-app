@@ -1,7 +1,7 @@
 import { createError, getRouterParam, readBody } from 'h3'
 import { requireUser } from '~~/server/utils/auth'
 import { dbQuery } from '~~/server/utils/db'
-import { cleanProjectName, cleanPublicStyle, projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
+import { PROJECT_METADATA_SELECT, cleanProjectName, cleanPublicStyle, projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
 
 function cleanVisibility(value: unknown): 'public' | 'private' | undefined {
   if (value === 'public' || value === 'private') return value
@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const id = String(getRouterParam(event, 'id') || '')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Project id is required.' })
 
-  const existing = await dbQuery<ProjectRow>('SELECT * FROM projects WHERE id = $1 LIMIT 1', [id])
+  const existing = await dbQuery<ProjectRow>(`SELECT ${PROJECT_METADATA_SELECT} FROM projects WHERE id = $1 LIMIT 1`, [id])
   const row = existing.rows[0]
   if (!row || row.deleted_at) throw createError({ statusCode: 404, statusMessage: 'Project not found.' })
   if (row.owner_id !== user.id) throw createError({ statusCode: 403, statusMessage: 'You do not have access to this project.' })
@@ -61,7 +61,7 @@ export default defineEventHandler(async (event) => {
   values.push(id)
 
   const result = await dbQuery<ProjectRow>(
-    `UPDATE projects SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING *`,
+    `UPDATE projects SET ${sets.join(', ')} WHERE id = $${values.length} RETURNING ${PROJECT_METADATA_SELECT}`,
     values,
   )
   return projectRecordFromRow(result.rows[0])

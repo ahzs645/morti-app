@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import * as Y from 'yjs'
 import type { CloudProjectRecord, FurnitureColumn, FurnitureConfig, LocalProjectRow } from '~~/shared/domain/types'
-import { ensureInitialized, readFurnitureDoc } from '~~/shared/yjs/doc'
 
 interface PreviewData {
   columns: FurnitureColumn[]
@@ -11,6 +9,10 @@ interface PreviewData {
 const { user, isAuthed, isCloudAuthed, isLocalBypass, signOut } = useAuth()
 const local = useLocalProjects()
 const cloud = useCloudProjects()
+
+const AppConfirmDialog = defineAsyncComponent(() => import('~/components/app/AppConfirmDialog.vue'))
+const AppFormDialog = defineAsyncComponent(() => import('~/components/app/AppFormDialog.vue'))
+const AuthModal = defineAsyncComponent(() => import('~/components/app/AuthModal.vue'))
 
 const authModalOpen = ref(false)
 const importInputRef = ref<HTMLInputElement | null>(null)
@@ -64,7 +66,11 @@ function blankPreview(): PreviewData {
   return { columns: [], config: null }
 }
 
-function decodeSnapshotBytes(bytes: Uint8Array): PreviewData {
+async function decodeSnapshotBytes(bytes: Uint8Array): Promise<PreviewData> {
+  const [Y, { ensureInitialized, readFurnitureDoc }] = await Promise.all([
+    import('yjs'),
+    import('~~/shared/yjs/doc'),
+  ])
   const doc = new Y.Doc()
   try {
     Y.applyUpdate(doc, bytes)
@@ -94,7 +100,7 @@ async function loadDemoPreview(rec: CloudProjectRecord): Promise<PreviewData> {
   try {
     const res = await fetch(cloud.getSnapshotURL(rec))
     if (!res.ok) return blankPreview()
-    return decodeSnapshotBytes(new Uint8Array(await res.arrayBuffer()))
+    return await decodeSnapshotBytes(new Uint8Array(await res.arrayBuffer()))
   }
   catch {
     return blankPreview()
@@ -123,7 +129,7 @@ async function loadProjects() {
   localProjects.value = rows
 
   const [previews, records] = await Promise.all([
-    Promise.all(rows.map(async row => [row.id, decodeSnapshotBytes(await local.getDesignSnapshot(row.id) ?? new Uint8Array())] as const)),
+    Promise.all(rows.map(async row => [row.id, await decodeSnapshotBytes(await local.getDesignSnapshot(row.id) ?? new Uint8Array())] as const)),
     Promise.all(rows.map(async row => [row.id, await loadCloudRecordForLocal(row)] as const)),
   ])
 
@@ -521,6 +527,7 @@ function isDemo(projectId: string): boolean {
     </div>
 
     <AppFormDialog
+      v-if="renameOpen"
       v-model:open="renameOpen"
       :title="renameDialogTitle"
       primary-label="Save"
@@ -541,6 +548,7 @@ function isDemo(projectId: string): boolean {
     </AppFormDialog>
 
     <AppConfirmDialog
+      v-if="deleteOpen"
       v-model:open="deleteOpen"
       title="Delete project?"
       :message="deleteDialogMessage"
@@ -549,7 +557,10 @@ function isDemo(projectId: string): boolean {
       @confirm="confirmDelete"
     />
 
-    <AuthModal v-model:open="authModalOpen" />
+    <AuthModal
+      v-if="authModalOpen"
+      v-model:open="authModalOpen"
+    />
 
     <input
       ref="importInputRef"

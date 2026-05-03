@@ -58,10 +58,10 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface OutlineUniforms {
-  invTexelSize: ReturnType<typeof uniform>
-  inkRgb: ReturnType<typeof uniform>
-  inkStrength: ReturnType<typeof uniform>
-  idThreshold: ReturnType<typeof uniform>
+  invTexelSize: any
+  inkRgb: any
+  inkStrength: any
+  idThreshold: any
 }
 
 /**
@@ -167,9 +167,9 @@ export function makeTechnicalRenderTargets(
 
   const slots: Record<string, any> = {
     output,
-    surfaceId: vec4(attribute('color', 'vec3'), 1),
+    surfaceId: vec4(attribute('color', 'vec3') as any, 1),
     outlineExclude: options.hasOutlineExcludeAttribute
-      ? vec4(attribute('outlineExclude', 'float'), 0, 0, 1)
+      ? vec4(attribute('outlineExclude', 'float') as any, 0, 0, 1)
       : vec4(0, 0, 0, 1),
   }
 
@@ -261,15 +261,12 @@ export function makeOutlineOutputNode(
       return length(centerId.sub(tapId))
     }
 
-    // 8-neighbour sum of (idDiff * exclWeight) — 1-texel ring.
+    // 4-neighbour cardinal sum of (idDiff * exclWeight) — halves shader cost
+    // vs the 8-tap ring with negligible visual difference for our line widths.
     const sum = idDiff(1, 0).mul(exclWeight(1, 0))
       .add(idDiff(-1, 0).mul(exclWeight(-1, 0)))
       .add(idDiff(0, 1).mul(exclWeight(0, 1)))
       .add(idDiff(0, -1).mul(exclWeight(0, -1)))
-      .add(idDiff(1, 1).mul(exclWeight(1, 1)))
-      .add(idDiff(-1, 1).mul(exclWeight(-1, 1)))
-      .add(idDiff(1, -1).mul(exclWeight(1, -1)))
-      .add(idDiff(-1, -1).mul(exclWeight(-1, -1)))
 
     // Binary edge mask, scaled by inkStrength (mix factor in [0, inkStrength]).
     const edge = step(uniforms.idThreshold, sum)
@@ -277,7 +274,7 @@ export function makeOutlineOutputNode(
 
     // Composite ink over the linear scene fill.
     const fill = texture(fillTex).rgb
-    const composited = mix(fill, uniforms.inkRgb, inkAmount)
+    const composited = mix(fill, uniforms.inkRgb, inkAmount as any)
 
     return vec4(composited, 1)
   })

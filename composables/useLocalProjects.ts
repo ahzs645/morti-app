@@ -1,8 +1,6 @@
-import * as Y from 'yjs'
+import type * as Y from 'yjs'
 import type { LocalProjectRow } from '~~/shared/domain/types'
 import { cryptoRandomId } from '~~/shared/domain/defaults'
-import { ensureInitialized } from '~~/shared/yjs/doc'
-import { exportDoc, importDocFromBlob } from '~~/shared/yjs/morti-format'
 import {
   STORES,
   idbClearForProject,
@@ -37,9 +35,13 @@ function makeRow(name: string): LocalProjectRow {
 }
 
 async function writeFreshDesignState(projectId: string): Promise<void> {
-  const doc = new Y.Doc()
+  const [Yjs, { ensureInitialized }] = await Promise.all([
+    import('yjs'),
+    import('~~/shared/yjs/doc'),
+  ])
+  const doc = new Yjs.Doc()
   ensureInitialized(doc)
-  const update = Y.encodeStateAsUpdate(doc)
+  const update = Yjs.encodeStateAsUpdate(doc)
   await idbPut<DesignStateRow>(STORES.designState, { projectId, update, snapshot: update, updatedAt: nowIso() })
 }
 
@@ -134,8 +136,12 @@ export function useLocalProjects() {
   }
 
   async function importMortiFile(blob: Blob, name: string): Promise<LocalProjectRow> {
+    const [Yjs, { importDocFromBlob }] = await Promise.all([
+      import('yjs'),
+      import('~~/shared/yjs/morti-format'),
+    ])
     const doc = await importDocFromBlob(blob)
-    const update = Y.encodeStateAsUpdate(doc)
+    const update = Yjs.encodeStateAsUpdate(doc)
     const row = makeRow(name)
     await idbPut<LocalProjectRow>(STORES.projects, row)
     await idbPut<DesignStateRow>(STORES.designState, { projectId: row.id, update, snapshot: update, updatedAt: nowIso() })
@@ -146,8 +152,12 @@ export function useLocalProjects() {
   // Used by `/p/:id` Remix flow: encode an in-memory Y.Doc as a brand-new
   // local project (no envelope round-trip). Returns the new local row.
   async function importDocAsCopy(doc: Y.Doc, name: string): Promise<LocalProjectRow> {
+    const [Yjs, { ensureInitialized }] = await Promise.all([
+      import('yjs'),
+      import('~~/shared/yjs/doc'),
+    ])
     ensureInitialized(doc)
-    const update = Y.encodeStateAsUpdate(doc)
+    const update = Yjs.encodeStateAsUpdate(doc)
     const row = makeRow(name)
     await idbPut<LocalProjectRow>(STORES.projects, row)
     await idbPut<DesignStateRow>(STORES.designState, { projectId: row.id, update, snapshot: update, updatedAt: nowIso() })
@@ -159,8 +169,13 @@ export function useLocalProjects() {
     const state = await idbGet<DesignStateRow>(STORES.designState, id)
     const bytes = stateBytes(state)
     if (!bytes) return null
-    const doc = new Y.Doc()
-    Y.applyUpdate(doc, bytes)
+    const [Yjs, { ensureInitialized }, { exportDoc }] = await Promise.all([
+      import('yjs'),
+      import('~~/shared/yjs/doc'),
+      import('~~/shared/yjs/morti-format'),
+    ])
+    const doc = new Yjs.Doc()
+    Yjs.applyUpdate(doc, bytes)
     ensureInitialized(doc)
     return exportDoc(doc)
   }

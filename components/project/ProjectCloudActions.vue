@@ -21,6 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const { isCloudAuthed } = useAuth()
+const LazyProjectPublishDialog = defineAsyncComponent(() => import('~/components/project/ProjectPublishDialog.vue'))
 const open = ref(false)
 const showActions = computed(() => isCloudAuthed.value)
 const isPublished = computed(() =>
@@ -70,7 +71,8 @@ function onUnpublished() {
       />
     </div>
 
-    <ProjectPublishDialog
+    <LazyProjectPublishDialog
+      v-if="open"
       v-model:open="open"
       :project="props.project"
       :published-cloud-record="props.cloudRecord"

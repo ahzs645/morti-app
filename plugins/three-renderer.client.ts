@@ -1,15 +1,11 @@
-import {
-  WebGLRenderer,
-  SRGBColorSpace,
-  ACESFilmicToneMapping,
-} from 'three'
+import type { WebGLRenderer } from 'three'
 
 export type ThreeRenderFn = (renderer: WebGLRenderer) => void
 
 export interface ThreeRendererPlugin {
   renderer: WebGLRenderer | null
-  getRenderer: () => WebGLRenderer
-  register: (canvas: HTMLCanvasElement, render: ThreeRenderFn) => () => void
+  getRenderer: () => Promise<WebGLRenderer>
+  register: (canvas: HTMLCanvasElement, render: ThreeRenderFn) => Promise<() => void>
   dispose: () => void
 }
 
@@ -41,10 +37,12 @@ export default defineNuxtPlugin((nuxtApp) => {
   let rafId: number | null = null
   let lastFrameTs = 0
 
-  function getRenderer(): WebGLRenderer {
+  async function getRenderer(): Promise<WebGLRenderer> {
+    if (renderer) return renderer
+    const { WebGLRenderer, SRGBColorSpace, ACESFilmicToneMapping } = await import('three')
     if (renderer) return renderer
     const r = new WebGLRenderer({
-      antialias: false,
+      antialias: true,
       alpha: true,
       powerPreference: 'high-performance',
     })
@@ -52,7 +50,6 @@ export default defineNuxtPlugin((nuxtApp) => {
     r.outputColorSpace = SRGBColorSpace
     r.toneMapping = ACESFilmicToneMapping
     r.toneMappingExposure = 1
-    // Cap the GPU dimension for any client code that consults it.
     ;(r as any).capabilities && ((r as any).capabilities.maxTextureSize = Math.min(
       (r as any).capabilities.maxTextureSize ?? three.maxTextureDimension,
       three.maxTextureDimension,
@@ -89,8 +86,8 @@ export default defineNuxtPlugin((nuxtApp) => {
     }
   }
 
-  function register(canvas: HTMLCanvasElement, render: ThreeRenderFn) {
-    getRenderer()
+  async function register(canvas: HTMLCanvasElement, render: ThreeRenderFn): Promise<() => void> {
+    await getRenderer()
     targets.set(canvas, render)
     ensureLoop()
     return () => {

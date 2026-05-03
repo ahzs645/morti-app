@@ -16,6 +16,7 @@ const props = defineProps<Props>()
 const wrapperRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const { colors } = useThemeColors()
+let requestCanvasRender: (() => void) | null = null
 
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(5, 1, 0.001, 100)
@@ -88,33 +89,41 @@ function frameCamera(target: THREE.Object3D) {
 
 async function loadModel() {
   clearGroup()
+  requestCanvasRender?.()
   if (!props.spec?.modelGlbSrc) return
   try {
     const gltf = await loader.loadAsync(props.spec.modelGlbSrc)
     flattenMaterials(gltf.scene)
     modelGroup.add(gltf.scene)
     frameCamera(gltf.scene)
+    requestCanvasRender?.()
   }
   catch {
     // eslint-disable-next-line no-console
     console.warn(`[HardwareDrawingCanvas] Failed to load ${props.spec.modelGlbSrc}`)
+    requestCanvasRender?.()
   }
 }
 
 const sceneRef = shallowRef(scene)
 const cameraRef = shallowRef<THREE.Camera>(camera)
 
-useThreejsCanvas({
+const canvasHandle = useThreejsCanvas({
   canvasRef,
   scene: sceneRef,
   camera: cameraRef,
   clearColor: getThemeColor('backgroundDefault').hex,
   clearAlpha: 1,
+  manual: true,
+  powerPreference: 'low-power',
+  shadowMap: false,
   render(renderer) {
     renderer.setClearColor(new THREE.Color(colors.value.backgroundDefault.hex), 1)
     renderer.render(scene, camera)
   },
 })
+
+requestCanvasRender = canvasHandle.requestRender
 
 watch(
   () => colors.value.generation,
@@ -125,6 +134,7 @@ watch(
       if (!mesh.isMesh) return
       ;(mesh.material as THREE.MeshBasicMaterial).color = new THREE.Color(colors.value.backgroundDefault.hex)
     })
+    requestCanvasRender?.()
   },
 )
 

@@ -4,7 +4,7 @@ import type { AiFurnitureDraft, AiFurnitureGenerateResponse } from '~~/shared/do
 import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
 import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
 import type { FurnitureConfig, FurnitureModule, ModuleType } from '~~/shared/domain/types'
-import { compileAssembly } from '~~/shared/domain/assembly'
+import { validateFurnitureDocIssues } from '~~/shared/domain/assembly-validation'
 import {
   insertColumn,
   insertModule,
@@ -99,7 +99,7 @@ const selectedModuleInfos = computed(() => {
   return infos
 })
 const selectedCount = computed(() => selectedModuleInfos.value.length)
-const inspectorIssues = computed<DesignerIssue[]>(() => compileAssembly(snapshot.value).issues)
+const inspectorIssues = computed<DesignerIssue[]>(() => validateFurnitureDocIssues(snapshot.value))
 const visibleIssues = computed(() => {
   if (selectedCount.value === 0) return inspectorIssues.value.filter(issue => issue.moduleId == null)
   const ids = new Set(selectedModuleInfos.value.map(info => info.id))
@@ -699,10 +699,10 @@ if (getCurrentScope()) {
       @update:zoom-percent="(v: number) => emit('update:zoomPercent', v)"
     />
 
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-6 sm:px-3 sm:pb-3 sm:pt-10">
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-4 sm:px-3 sm:pb-3 sm:pt-10">
       <div
         class="pointer-events-auto flex w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-xl bg-elevated shadow-lg ring-1 ring-default/60"
-        :class="selectedCount > 0 ? 'max-h-[min(14rem,36dvh)] sm:max-h-[min(16rem,42vh)]' : 'max-h-[min(15rem,42dvh)] sm:max-h-[min(18rem,46vh)]'"
+        :class="selectedCount > 0 ? 'max-h-[min(11rem,30dvh)] sm:max-h-[min(16rem,42vh)]' : 'max-h-[min(10rem,28dvh)] sm:max-h-[min(18rem,46vh)]'"
       >
         <div class="inspector-root grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-muted">
           <div
@@ -836,23 +836,23 @@ if (getCurrentScope()) {
               <button
                 v-if="aiFurnitureEnabled"
                 type="button"
-                class="group flex min-h-14 w-full min-w-0 items-center gap-3 rounded-xl bg-primary px-3 py-2.5 text-left text-inverted shadow-md shadow-primary/20 ring-1 ring-inset ring-white/10 transition-[transform,box-shadow,filter] duration-150 ease-out hover:shadow-lg hover:shadow-primary/25 active:scale-[0.97]"
+                class="group flex min-h-10 w-full min-w-0 items-center gap-2 rounded-xl bg-primary px-2.5 py-1.5 text-left text-inverted shadow-md shadow-primary/20 ring-1 ring-inset ring-white/10 transition-[transform,box-shadow,filter] duration-150 ease-out hover:shadow-lg hover:shadow-primary/25 active:scale-[0.97] sm:min-h-14 sm:gap-3 sm:px-3 sm:py-2.5"
                 aria-label="Build furniture with AI"
                 @click="openAiBuilder"
               >
-                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-black/15">
+                <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-black/15 sm:size-9">
                   <UIcon
                     name="i-lucide-sparkles"
-                    class="size-5 transition-transform duration-150 ease-out group-hover:scale-110"
+                    class="size-4 transition-transform duration-150 ease-out group-hover:scale-110 sm:size-5"
                   />
                 </span>
                 <span class="min-w-0 flex-1">
-                  <span class="block text-sm font-semibold leading-5 text-pretty">Build with AI</span>
-                  <span class="block truncate text-xs leading-4 opacity-80">Describe the cabinet and preview it before applying.</span>
+                  <span class="block text-xs font-semibold leading-4 text-pretty sm:text-sm sm:leading-5">Build with AI</span>
+                  <span class="hidden truncate text-xs leading-4 opacity-80 sm:block">Describe the cabinet and preview it before applying.</span>
                 </span>
                 <UIcon
                   name="i-lucide-arrow-right"
-                  class="size-4 shrink-0 opacity-80 transition-transform duration-150 ease-out group-hover:translate-x-0.5"
+                  class="size-3.5 shrink-0 opacity-80 transition-transform duration-150 ease-out group-hover:translate-x-0.5 sm:size-4"
                 />
               </button>
 
@@ -860,18 +860,18 @@ if (getCurrentScope()) {
                 class="relative min-h-0 min-w-0 cursor-pointer transition-transform duration-150 active:scale-[0.97]"
                 @click="settingsOpen = true"
               >
-                <div class="grid h-20 min-w-0 grid-cols-3 gap-1.5 pt-0.5 sm:h-40 sm:gap-2 sm:pt-1">
+                <div class="grid h-12 min-w-0 grid-cols-3 gap-1.5 pt-0.5 sm:h-40 sm:gap-2 sm:pt-1">
                   <article
                     v-for="field in summaryConfigFields"
                     :key="field.key"
-                    class="flex min-w-0 flex-col rounded-lg bg-default px-1.5 py-1.5 shadow-sm sm:px-3 sm:py-2.5"
+                    class="flex min-w-0 flex-col rounded-lg bg-default px-1.5 py-1 shadow-sm sm:px-3 sm:py-2.5"
                   >
-                    <div class="flex min-w-0 flex-1 flex-col justify-center gap-1 p-1 sm:gap-2 sm:p-2">
-                      <h3 class="min-w-0 text-[0.62rem] font-medium leading-tight text-muted sm:text-balance sm:text-[0.7rem] sm:leading-snug">
+                    <div class="flex min-w-0 flex-1 flex-col justify-center gap-0.5 p-0.5 sm:gap-2 sm:p-2">
+                      <h3 class="min-w-0 text-[0.55rem] font-medium leading-tight text-muted sm:text-balance sm:text-[0.7rem] sm:leading-snug">
                         {{ summaryLabel(field) }} ({{ field.unit }})
                       </h3>
                       <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0 sm:pb-2">
-                        <span class="min-w-0 text-xl font-extralight leading-none tracking-normal tabular-nums text-highlighted sm:text-[2.75rem]">
+                        <span class="min-w-0 text-sm font-extralight leading-none tracking-normal tabular-nums text-highlighted sm:text-[2.75rem]">
                           {{ formatConfigValue(field) }}
                         </span>
                       </div>

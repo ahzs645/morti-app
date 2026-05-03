@@ -2,7 +2,7 @@ import { createError, readBody } from 'h3'
 import { requireUser } from '~~/server/utils/auth'
 import { dbQuery } from '~~/server/utils/db'
 import { createId } from '~~/server/utils/security'
-import { cleanProjectName, cleanPublicStyle, projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
+import { PROJECT_METADATA_SELECT, cleanProjectName, cleanPublicStyle, projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
 
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
         public_style = COALESCE(EXCLUDED.public_style, projects.public_style),
         deleted_at = NULL,
         updated_at = now()
-      RETURNING *
+      RETURNING ${PROJECT_METADATA_SELECT}
     `,
     [
       createId('prj'),

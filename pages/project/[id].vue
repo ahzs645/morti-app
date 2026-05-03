@@ -5,6 +5,13 @@ import { exportDoc } from '~~/shared/yjs/morti-format'
 
 definePageMeta({ layout: false })
 
+const LazyProjectCanvas = defineAsyncComponent(() => import('~/components/three/ProjectCanvas.vue'))
+const LazyProjectDesigner = defineAsyncComponent(() => import('~/components/project/ProjectDesigner.vue'))
+const LazyProjectCutlist = defineAsyncComponent(() => import('~/components/project/ProjectCutlist.vue'))
+const LazyProjectCutlistPanelGrid = defineAsyncComponent(() => import('~/components/project/ProjectCutlistPanelGrid.vue'))
+const LazyAppConfirmDialog = defineAsyncComponent(() => import('~/components/app/AppConfirmDialog.vue'))
+const LazyAppFormDialog = defineAsyncComponent(() => import('~/components/app/AppFormDialog.vue'))
+
 const route = useRoute()
 const id = computed(() => String(route.params.id))
 
@@ -51,7 +58,7 @@ let loadSeq = 0
 // View mode + UI state — hydrated from editor state once it loads.
 const viewMode = ref<ViewMode>('assembly')
 const splitRatio = ref(0.55)
-const mobileSplitRatio = ref(0.42)
+const mobileSplitRatio = ref(0.5)
 const inputsCollapsed = ref(false)
 const cameraState = ref<CameraState | null>(null)
 const selectedModules = ref<{ id: string }[]>([])
@@ -78,7 +85,8 @@ const isEditingPublishedCopy = computed<boolean>(
   () => isCloudAuthed.value && !!project.value && isPublished.value,
 )
 const isMobileViewport = ref(false)
-const MOBILE_ASSEMBLY_PREVIEW_RATIO = 0.42
+const MOBILE_ASSEMBLY_PREVIEW_RATIO = 0.5
+const STYLE_DESKTOP_PREVIEW_RATIO = 0.76
 let mobileViewportQuery: MediaQueryList | null = null
 
 function updateMobileViewport() {
@@ -86,10 +94,11 @@ function updateMobileViewport() {
 }
 
 const collapseEditorInputs = computed<boolean>(
-  () => (styleTabFlag.value && viewMode.value === 'style') || (inputsCollapsed.value && viewMode.value === 'assembly'),
+  () => inputsCollapsed.value && viewMode.value === 'assembly',
 )
 const activeSplitRatio = computed<number>(() => {
   if (viewMode.value === 'cutlist') return isMobileViewport.value ? 0.46 : 0.5
+  if (styleTabFlag.value && viewMode.value === 'style') return isMobileViewport.value ? mobileSplitRatio.value : STYLE_DESKTOP_PREVIEW_RATIO
   if (collapseEditorInputs.value) return 1
   return isMobileViewport.value ? mobileSplitRatio.value : splitRatio.value
 })
@@ -624,10 +633,11 @@ const topChromeMaxWidth = computed(() => {
   }
   return `min(40rem, calc((1 - ${activeSplitRatio.value}) * 100vw - 24px))`
 })
-const mobileActionTop = computed(() =>
-  collapseEditorInputs.value
-    ? '4rem'
-    : `calc((1 - ${activeSplitRatio.value}) * 100dvh + 0.75rem)`,
+const mobileActionTop = computed(() => isMobileViewport.value ? '7rem' : '4rem')
+const canvasChromeTeleportSelector = computed(() =>
+  isMobileViewport.value
+    ? '#morti-project-canvas-chrome-host-mobile'
+    : '#morti-project-canvas-chrome-host',
 )
 </script>
 
@@ -672,15 +682,18 @@ const mobileActionTop = computed(() =>
         :split-ratio="activeSplitRatio"
         :divider-locked="viewMode === 'cutlist'"
         :collapse-inputs="collapseEditorInputs"
+        :hide-divider="styleTabFlag && viewMode === 'style'"
+        :inputs-basis="styleTabFlag && viewMode === 'style' && !isMobileViewport ? '20rem' : ''"
+        :reverse-on-mobile-stack="true"
+        :reverse-on-desktop="styleTabFlag && viewMode === 'style'"
         @update:split-ratio="onSplitRatioUpdate"
       >
         <!-- Inputs (left) pane -->
         <div
           v-if="project"
           class="project-input-pane relative flex h-full min-h-0 flex-col overflow-hidden"
-          :class="{ 'project-input-pane--no-mobile-offset': viewMode !== 'assembly' }"
         >
-          <ProjectDesigner
+          <LazyProjectDesigner
             v-if="!userNeedsEmailVerification && viewMode === 'assembly' && docRef"
             :ydoc="(docRef as any)"
             :selected-modules="selectedModules"
@@ -689,7 +702,7 @@ const mobileActionTop = computed(() =>
             @update:selected-modules="(v) => (selectedModules = v)"
             @update:zoom-percent="(v) => (zoomPercent = v)"
           />
-          <ProjectCutlist
+          <LazyProjectCutlist
             v-else-if="!userNeedsEmailVerification && viewMode === 'cutlist' && docRef"
             v-model:selected-drawing-key="cutlistSelectedDrawingKey"
             :ydoc="(docRef as any)"
@@ -697,9 +710,13 @@ const mobileActionTop = computed(() =>
           />
           <div
             v-else-if="!userNeedsEmailVerification && styleTabFlag && viewMode === 'style'"
-            class="min-h-0 flex-1"
-            aria-hidden="true"
-          />
+            class="min-h-0 flex-1 overflow-hidden"
+          >
+            <ProjectStylePanel
+              v-model="publicStyle"
+              :surface="isMobileViewport ? 'pane' : 'sidebar'"
+            />
+          </div>
           <div
             v-else
             class="min-h-0 flex-1 bg-muted/10"
@@ -736,7 +753,7 @@ const mobileActionTop = computed(() =>
               </template>
 
               <div class="relative h-full min-h-0 w-full">
-                <ProjectCanvas
+                <LazyProjectCanvas
                   v-if="docRef && (viewMode === 'assembly' || (styleTabFlag && viewMode === 'style'))"
                   ref="projectCanvasRef"
                   :ydoc="(docRef as any)"
@@ -749,7 +766,7 @@ const mobileActionTop = computed(() =>
                   :module-volume-helpers-visible="moduleVolumeHelpersVisible"
                   :headless-capture="false"
                   :capture-yaw-radians="0"
-                  canvas-chrome-teleport-selector="#morti-project-canvas-chrome-host"
+                  :canvas-chrome-teleport-selector="canvasChromeTeleportSelector"
                   class="h-full w-full"
                   @camera-change="onCameraChange"
                   @update:assembly-open-doors-drawers="(v: boolean) => (assemblyOpenDoorsDrawers = v)"
@@ -757,7 +774,7 @@ const mobileActionTop = computed(() =>
                   @update:module-volume-helpers-visible="(v: boolean) => (moduleVolumeHelpersVisible = v)"
                   @update:render-mode="onCanvasRenderModeUpdate"
                 />
-                <ProjectCutlistPanelGrid
+                <LazyProjectCutlistPanelGrid
                   v-else-if="docRef && viewMode === 'cutlist'"
                   v-model:selected-drawing-key="cutlistSelectedDrawingKey"
                   :ydoc="(docRef as any)"
@@ -786,10 +803,10 @@ const mobileActionTop = computed(() =>
       <!-- Top-left chrome: project menu + name + view-mode pill -->
       <div
         v-if="project"
-        class="project-top-chrome pointer-events-none fixed inset-x-3 top-3 z-30 flex flex-nowrap items-start gap-2.5 md:inset-x-auto md:left-4 md:top-4"
+        class="project-top-chrome pointer-events-none fixed inset-x-3 top-3 z-30 flex flex-wrap items-start gap-2 md:inset-x-auto md:left-4 md:top-4 md:flex-nowrap md:gap-2.5"
         :style="{ '--project-top-chrome-max-width': topChromeMaxWidth }"
       >
-        <div class="pointer-events-auto flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-muted px-3 shadow-sm md:max-w-[min(20rem,calc(100vw-6rem))] md:flex-none">
+        <div class="pointer-events-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-2 shadow-sm sm:gap-2.5 sm:px-3 md:max-w-[min(20rem,calc(100vw-6rem))]">
           <UButton
             to="/"
             variant="ghost"
@@ -853,7 +870,24 @@ const mobileActionTop = computed(() =>
           </div>
         </div>
 
-        <div class="pointer-events-auto flex h-10 shrink-0 items-center gap-1 rounded-full bg-muted px-1 shadow-sm">
+        <div class="project-mobile-cloud-actions pointer-events-auto flex shrink-0 md:hidden">
+          <ProjectCloudActions
+            :project="project"
+            :cloud-record="cloudRecord"
+            :public-style="publicStyle"
+            :draft-sync-status="draftSyncStatus"
+            @retry-draft-sync="retryDraftSync"
+            @published="onPublished"
+            @unpublished="onUnpublished"
+          />
+        </div>
+
+        <div
+          class="project-mobile-line-break"
+          aria-hidden="true"
+        />
+
+        <div class="project-view-tabs pointer-events-auto flex h-10 shrink-0 items-center gap-1 rounded-full bg-muted px-1 shadow-sm">
           <UButton
             size="xs"
             :variant="viewMode === 'assembly' ? 'solid' : 'ghost'"
@@ -880,6 +914,12 @@ const mobileActionTop = computed(() =>
             @click="viewMode = 'style'"
           />
         </div>
+
+        <div
+          v-if="isMobileViewport"
+          id="morti-project-canvas-chrome-host-mobile"
+          class="project-mobile-canvas-chrome pointer-events-auto min-h-0 shrink-0"
+        />
       </div>
 
       <!-- Top-right chrome: cloud actions -->
@@ -890,18 +930,21 @@ const mobileActionTop = computed(() =>
       >
         <div class="pointer-events-auto flex max-w-full flex-row flex-wrap items-center justify-end gap-2">
           <div
+            v-if="!isMobileViewport"
             id="morti-project-canvas-chrome-host"
             class="min-h-0 shrink-0"
           />
-          <ProjectCloudActions
-            :project="project"
-            :cloud-record="cloudRecord"
-            :public-style="publicStyle"
-            :draft-sync-status="draftSyncStatus"
-            @retry-draft-sync="retryDraftSync"
-            @published="onPublished"
-            @unpublished="onUnpublished"
-          />
+          <div class="hidden md:block">
+            <ProjectCloudActions
+              :project="project"
+              :cloud-record="cloudRecord"
+              :public-style="publicStyle"
+              :draft-sync-status="draftSyncStatus"
+              @retry-draft-sync="retryDraftSync"
+              @published="onPublished"
+              @unpublished="onUnpublished"
+            />
+          </div>
         </div>
         <UAlert
           v-if="demoToggleError"
@@ -931,15 +974,8 @@ const mobileActionTop = computed(() =>
         <VerifyEmailGate class="min-h-0 flex-1 overflow-auto" />
       </div>
 
-      <div
-        v-if="project && !userNeedsEmailVerification && styleTabFlag && viewMode === 'style'"
-        class="fixed bottom-3 left-3 z-40 sm:bottom-4 sm:left-4"
-      >
-        <ProjectStylePanel v-model="publicStyle" />
-      </div>
-
-      <AppFormDialog
-        v-if="project"
+      <LazyAppFormDialog
+        v-if="project && renameOpen"
         v-model:open="renameOpen"
         title="Change name"
         primary-label="Save"
@@ -957,10 +993,10 @@ const mobileActionTop = computed(() =>
             @keydown.enter.prevent="confirmRename"
           />
         </UFormField>
-      </AppFormDialog>
+      </LazyAppFormDialog>
 
-      <AppConfirmDialog
-        v-if="project"
+      <LazyAppConfirmDialog
+        v-if="project && deleteOpen"
         v-model:open="deleteOpen"
         title="Delete project?"
         :message="deleteDialogMessage"
@@ -988,6 +1024,10 @@ const mobileActionTop = computed(() =>
   display: none;
 }
 
+.project-mobile-line-break {
+  display: none;
+}
+
 @container (min-width: 10.5rem) {
   .public-badge-label {
     display: inline;
@@ -995,31 +1035,31 @@ const mobileActionTop = computed(() =>
 }
 
 @media (max-width: 767.98px) {
-  .project-page {
-    --project-editor-safe-top: 4rem;
+  .project-top-chrome {
+    row-gap: 0.5rem;
   }
 
-  .project-input-pane {
-    padding-top: var(--project-editor-safe-top);
+  .project-mobile-line-break {
+    display: block;
+    order: 2;
+    flex-basis: 100%;
+    width: 0;
+    height: 0;
   }
 
-  .project-input-pane--no-mobile-offset {
-    padding-top: 0;
+  .project-view-tabs {
+    order: 3;
+  }
+
+  .project-mobile-canvas-chrome {
+    order: 4;
+    margin-left: auto;
   }
 }
 
-@media (max-width: 374.98px) {
-  .project-page {
-    --project-editor-safe-top: 6.5rem;
-  }
-
-  .project-top-chrome {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .project-top-chrome > :first-child {
-    flex-basis: 100%;
+@media (max-width: 399.98px) {
+  .project-mobile-cloud-actions :deep(button) {
+    padding-inline: 0.75rem;
   }
 }
 

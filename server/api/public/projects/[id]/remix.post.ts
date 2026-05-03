@@ -1,6 +1,6 @@
 import { createError, getRouterParam } from 'h3'
 import { dbQuery } from '~~/server/utils/db'
-import { projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
+import { PROJECT_METADATA_SELECT, projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
 
 export default defineEventHandler(async (event) => {
   const id = String(getRouterParam(event, 'id') || '')
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
         AND deleted_at IS NULL
         AND visibility = 'public'
         AND snapshot IS NOT NULL
-      RETURNING *
+      RETURNING ${PROJECT_METADATA_SELECT}
     `,
     [id],
   )

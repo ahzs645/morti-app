@@ -44,6 +44,8 @@ export interface UseThreejsCanvasOptions {
   onResize?: (width: number, height: number) => void
   clearColor?: number
   clearAlpha?: number
+  powerPreference?: WebGLPowerPreference
+  shadowMap?: boolean
   /** When true, do not auto-render every frame (caller drives via render()). */
   manual?: boolean
 }
@@ -63,6 +65,7 @@ export function useThreejsCanvas(opts: UseThreejsCanvasOptions): UseThreejsCanva
   let renderer: WebGLRenderer | null = null
   let observer: ResizeObserver | null = null
   let rafId: number | null = null
+  let manualRafId: number | null = null
   let resizeTimer: ReturnType<typeof setTimeout> | null = null
   let lastWidth = 0
   let lastHeight = 0
@@ -144,6 +147,14 @@ export function useThreejsCanvas(opts: UseThreejsCanvasOptions): UseThreejsCanva
 
   function requestRender() {
     syncSize()
+    if (opts.manual && typeof window !== 'undefined') {
+      if (manualRafId !== null) return
+      manualRafId = window.requestAnimationFrame(() => {
+        manualRafId = null
+        renderOnce()
+      })
+      return
+    }
     renderOnce()
   }
 
@@ -164,7 +175,7 @@ export function useThreejsCanvas(opts: UseThreejsCanvasOptions): UseThreejsCanva
         canvas,
         antialias: true,
         alpha: true,
-        powerPreference: 'high-performance',
+        powerPreference: opts.powerPreference ?? 'high-performance',
       })
     }
     catch (err) {
@@ -175,7 +186,7 @@ export function useThreejsCanvas(opts: UseThreejsCanvasOptions): UseThreejsCanva
     renderer.outputColorSpace = SRGBColorSpace
     renderer.toneMapping = ACESFilmicToneMapping
     renderer.toneMappingExposure = 1
-    renderer.shadowMap.enabled = true
+    renderer.shadowMap.enabled = opts.shadowMap ?? true
     if (typeof opts.clearColor === 'number') {
       renderer.setClearColor(opts.clearColor, opts.clearAlpha ?? 1)
     }
@@ -200,6 +211,10 @@ export function useThreejsCanvas(opts: UseThreejsCanvasOptions): UseThreejsCanva
     if (rafId !== null) {
       window.cancelAnimationFrame(rafId)
       rafId = null
+    }
+    if (manualRafId !== null) {
+      window.cancelAnimationFrame(manualRafId)
+      manualRafId = null
     }
     if (resizeTimer !== null) {
       clearTimeout(resizeTimer)

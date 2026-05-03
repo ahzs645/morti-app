@@ -11,7 +11,8 @@ export interface ProjectRow {
   is_demo: boolean
   remix_count: number
   public_style: string | null
-  snapshot: Buffer | null
+  snapshot?: Buffer | null
+  has_snapshot?: boolean | null
   snapshot_filename: string | null
   snapshot_content_type: string | null
   snapshot_updated_at: Date | string | null
@@ -21,9 +22,47 @@ export interface ProjectRow {
   updated_at: Date | string
 }
 
+export const PROJECT_METADATA_SELECT = `
+  id,
+  owner_id,
+  name,
+  visibility,
+  client_project_id,
+  source_project_id,
+  is_demo,
+  remix_count,
+  public_style,
+  snapshot IS NOT NULL AS has_snapshot,
+  snapshot_filename,
+  snapshot_content_type,
+  snapshot_updated_at,
+  published_at,
+  deleted_at,
+  created_at,
+  updated_at
+`
+
 function iso(value: Date | string | null | undefined): string {
   if (!value) return ''
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
+}
+
+export function projectHasSnapshot(row: ProjectRow): boolean {
+  return !!row.snapshot || row.has_snapshot === true
+}
+
+export function projectSnapshotEtag(row: ProjectRow): string | null {
+  if (!projectHasSnapshot(row) || !row.snapshot_updated_at) return null
+  const updated = row.snapshot_updated_at instanceof Date
+    ? row.snapshot_updated_at.getTime()
+    : new Date(row.snapshot_updated_at).getTime()
+  if (!Number.isFinite(updated)) return null
+  return `"snapshot-${row.id}-${updated}"`
+}
+
+export function ifNoneMatchMatches(value: string | undefined | null, etag: string): boolean {
+  if (!value) return false
+  return value.split(',').map(part => part.trim()).includes(etag)
 }
 
 export function projectRecordFromRow(row: ProjectRow): CloudProjectRecord {
@@ -39,7 +78,7 @@ export function projectRecordFromRow(row: ProjectRow): CloudProjectRecord {
     is_demo: row.is_demo === true,
     remix_count: Number(row.remix_count ?? 0),
     public_style: row.public_style ?? '',
-    snapshot: row.snapshot ? row.snapshot_filename || `snapshot-${row.client_project_id}.bin` : '',
+    snapshot: projectHasSnapshot(row) ? row.snapshot_filename || `snapshot-${row.client_project_id}.bin` : '',
     published_at: iso(row.published_at),
     deleted_at: iso(row.deleted_at),
     created: iso(row.created_at),

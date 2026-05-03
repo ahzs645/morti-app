@@ -43,7 +43,7 @@ export async function useEditorState(projectId: string) {
   let timer: ReturnType<typeof setTimeout> | null = null
 
   async function persistNow(): Promise<void> {
-    const snapshot: ProjectEditorStateRow = JSON.parse(JSON.stringify(state)) as ProjectEditorStateRow
+    const snapshot: ProjectEditorStateRow = structuredClone(toRaw(state)) as ProjectEditorStateRow
     snapshot.id = projectId
     snapshot.projectId = projectId
     ;(snapshot as ProjectEditorStateRow & { updatedAt: string }).updatedAt = new Date().toISOString()

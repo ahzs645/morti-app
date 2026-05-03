@@ -1,7 +1,15 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  future: { compatibilityVersion: 4 },
+  srcDir: '.',
   ssr: false,
   devtools: { enabled: true },
+
+  typescript: {
+    tsConfig: {
+      compilerOptions: { noUncheckedIndexedAccess: false },
+    },
+  },
 
   modules: [
     '@nuxt/ui',
@@ -28,6 +36,9 @@ export default defineNuxtConfig({
         { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
         { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
       ],
+      script: [
+        { src: 'https://stats.morti.app/t.js', defer: true, 'data-site': '1' },
+      ],
     },
   },
 
@@ -45,8 +56,9 @@ export default defineNuxtConfig({
   },
 
   fonts: {
+    defaults: { weights: [400, 500, 600, 700], styles: ['normal'] },
     families: [
-      { name: 'Public Sans', provider: 'google', weights: [400, 500, 600, 700], styles: ['normal', 'italic'] },
+      { name: 'Public Sans', provider: 'google', weights: [400, 500, 600, 700], styles: ['normal'], display: 'swap', preload: false },
     ],
   },
 
@@ -84,17 +96,23 @@ export default defineNuxtConfig({
       three: {
         maxTextureDimension: 16384,
         clearColor: 0,
-        maxFps: 120,
+        maxFps: 60,
       },
     },
   },
 
   vite: {
-    optimizeDeps: { include: ['three', 'yjs'] },
+    optimizeDeps: { include: [] },
+  },
+
+  nitro: {
+    compressPublicAssets: { brotli: true, gzip: true },
+    routeRules: {
+      '/_nuxt/**': { headers: { 'cache-control': 'public, immutable, max-age=31536000' } },
+    },
   },
 
   experimental: {
-    payloadExtraction: false,
     viteEnvironmentApi: true,
   },
 

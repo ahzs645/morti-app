@@ -15,10 +15,12 @@ interface Props {
   hint?: string
   modelValue: string
   customColor: string
+  variant?: 'card' | 'row'
 }
 
 const props = withDefaults(defineProps<Props>(), {
   hint: '',
+  variant: 'card',
 })
 
 const emit = defineEmits<{
@@ -67,8 +69,37 @@ function onCustomInput(event: Event) {
 </script>
 
 <template>
-  <UPopover v-model:open="open" :content="{ side: 'top', align: 'start', sideOffset: 8, collisionPadding: 12 }">
+  <UPopover
+    v-model:open="open"
+    :content="{ side: 'top', align: 'center', sideOffset: 8, collisionPadding: 12 }"
+    :ui="{ content: 'bg-transparent p-0 shadow-none ring-0 rounded-none overflow-visible' }"
+  >
     <button
+      v-if="variant === 'row'"
+      type="button"
+      class="flex h-[34px] w-full items-center justify-between gap-2 rounded-lg border border-default bg-default px-2.5 text-left text-xs text-muted transition-[background-color,border-color,transform] duration-150 hover:border-accented hover:bg-accented/40 active:scale-[0.98]"
+      :aria-label="`${label}: ${triggerLabel}, ${triggerSheen}`"
+    >
+      <span class="min-w-0 truncate font-medium text-highlighted">{{ label }}</span>
+      <span class="flex min-w-0 shrink items-center gap-2">
+        <span
+          class="relative size-4 shrink-0 overflow-hidden rounded-full ring-1 ring-default/70"
+          :style="triggerThumbStyle"
+        >
+          <span
+            class="absolute inset-0"
+            :style="triggerSheenStyle"
+          />
+        </span>
+        <span class="max-w-32 truncate font-medium text-toned">{{ triggerLabel }}</span>
+        <UIcon
+          name="i-lucide-chevron-down"
+          class="size-3.5 shrink-0 text-muted"
+        />
+      </span>
+    </button>
+    <button
+      v-else
       type="button"
       class="flex w-full min-h-11 items-center gap-2.5 rounded-xl bg-default px-2 py-1.5 text-left shadow-sm ring-1 ring-default/60 transition-[box-shadow,transform] hover:ring-[color:color-mix(in_oklch,var(--color-morti-400)_40%,var(--ui-border))] active:scale-[0.99]"
       :aria-label="`${label}: ${triggerLabel}, ${triggerSheen}`"
@@ -97,14 +128,14 @@ function onCustomInput(event: Event) {
     </button>
 
     <template #content>
-      <div class="w-[320px] max-h-[70vh] overflow-y-auto scrollbar-thin rounded-2xl bg-muted/95 p-3 shadow-xl ring-1 ring-default/60 backdrop-blur">
-        <div class="mb-2 flex items-baseline justify-between gap-2 px-1">
-          <p class="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+      <div class="material-picker-popover scrollbar-thin">
+        <div class="material-picker-header">
+          <p class="shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
             {{ label }} material
           </p>
           <p
             v-if="hint"
-            class="truncate text-[10px] text-muted/80"
+            class="min-w-0 max-w-[10rem] truncate text-right text-[10px] text-muted/80"
           >{{ hint }}</p>
         </div>
 
@@ -115,21 +146,21 @@ function onCustomInput(event: Event) {
           <p class="mt-2 px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted/80">
             {{ group.category }}
           </p>
-          <div class="mt-1.5 grid grid-cols-2 gap-2">
+          <div class="material-picker-grid mt-1.5 grid grid-cols-2 gap-2">
             <button
               v-for="preset in group.items"
               :key="preset.id"
               type="button"
-              class="group/card relative flex flex-col overflow-hidden rounded-xl bg-default text-left ring-1 transition-[transform,box-shadow,--tw-ring-color] duration-150 active:scale-[0.97]"
+              class="material-preset-card group/card relative flex flex-col overflow-hidden rounded-xl bg-default text-left transition-[background-color,box-shadow,transform] duration-150 active:scale-[0.96]"
               :class="modelValue === preset.id
-                ? 'ring-2 ring-primary'
-                : 'ring-default/60 hover:ring-[color:color-mix(in_oklch,var(--color-morti-400)_50%,transparent)]'"
+                ? 'is-selected'
+                : undefined"
               :aria-label="`${preset.label}, ${preset.sheenLabel}`"
               :aria-pressed="modelValue === preset.id"
               @click="pickPreset(preset.id)"
             >
               <span
-                class="relative block h-[60px] w-full"
+                class="material-picker-chip relative block h-[60px] w-full"
                 :style="chipBackgroundStyle(preset.grain, preset.hex)"
               >
                 <span
@@ -145,10 +176,10 @@ function onCustomInput(event: Event) {
                 </span>
               </span>
               <span class="flex flex-col gap-0 px-2 py-1.5">
-                <span class="truncate text-[11px] font-semibold leading-tight text-highlighted">
+                <span class="truncate text-[11px] font-semibold leading-tight text-highlighted text-pretty">
                   {{ preset.label }}
                 </span>
-                <span class="truncate text-[10px] leading-tight text-muted">
+                <span class="truncate text-[10px] leading-tight text-muted text-pretty">
                   {{ preset.sheenLabel }}
                 </span>
               </span>
@@ -163,8 +194,8 @@ function onCustomInput(event: Event) {
           role="radio"
           :aria-checked="isCustom"
           aria-label="Custom hex color"
-          class="mt-1.5 flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-xl bg-default ring-1 transition-[box-shadow] duration-150"
-          :class="isCustom ? 'ring-2 ring-primary' : 'ring-default/60 hover:ring-[color:color-mix(in_oklch,var(--color-morti-400)_50%,transparent)]'"
+          class="material-custom-row mt-1.5 flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-xl bg-default transition-[box-shadow,transform] duration-150 active:scale-[0.96]"
+          :class="isCustom ? 'is-selected' : undefined"
         >
           <span
             class="relative block h-[44px] w-16 shrink-0"
@@ -191,3 +222,97 @@ function onCustomInput(event: Event) {
     </template>
   </UPopover>
 </template>
+
+<style scoped>
+.material-picker-popover {
+  box-sizing: border-box;
+  isolation: isolate;
+  width: min(20rem, calc(100vw - 1.5rem), var(--reka-popover-content-available-width, calc(100vw - 1.5rem)));
+  max-height: min(28rem, calc(100dvh - 1.5rem), var(--reka-popover-content-available-height, calc(100dvh - 1.5rem)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 18px;
+  background: color-mix(in oklch, var(--ui-bg-muted) 97%, transparent);
+  padding: 12px;
+  box-shadow:
+    0 22px 56px rgb(0 0 0 / 0.36),
+    0 7px 18px rgb(0 0 0 / 0.2),
+    inset 0 0 0 1px color-mix(in oklch, var(--ui-border) 82%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.material-picker-header {
+  position: sticky;
+  top: -12px;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -12px -12px 8px;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--ui-bg-muted) 98%, transparent) 0%,
+    color-mix(in oklch, var(--ui-bg-muted) 96%, transparent) 76%,
+    color-mix(in oklch, var(--ui-bg-muted) 0%, transparent) 100%
+  );
+  padding: 12px 13px 10px;
+  backdrop-filter: blur(12px);
+}
+
+.material-preset-card,
+.material-custom-row {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--ui-border-muted) 82%, transparent);
+}
+
+.material-preset-card:hover,
+.material-custom-row:hover {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--ui-primary) 38%, var(--ui-border-muted)),
+    0 8px 20px rgb(0 0 0 / 0.18);
+}
+
+.material-preset-card:focus-visible,
+.material-custom-row:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--ui-primary) 62%, transparent);
+  outline-offset: 2px;
+}
+
+.material-preset-card.is-selected,
+.material-custom-row.is-selected {
+  box-shadow:
+    inset 0 0 0 2px var(--ui-primary),
+    0 10px 24px rgb(0 0 0 / 0.22);
+}
+
+@media (max-width: 767.98px) {
+  .material-picker-popover {
+    width: min(20rem, calc(100vw - 2rem), var(--reka-popover-content-available-width, calc(100vw - 2rem)));
+    max-height: min(20rem, 48dvh, var(--reka-popover-content-available-height, 48dvh));
+    border-radius: 16px;
+    padding: 10px;
+  }
+
+  .material-picker-header {
+    top: -10px;
+    margin: -10px -10px 8px;
+    border-radius: 16px 16px 0 0;
+    padding: 10px 11px 9px;
+  }
+
+  .material-picker-grid {
+    gap: 6px;
+  }
+
+  .material-picker-chip {
+    height: 52px;
+  }
+}
+
+@media (max-width: 359.98px) {
+  .material-picker-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>
