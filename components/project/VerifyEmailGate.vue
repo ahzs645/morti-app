@@ -48,63 +48,78 @@ async function onSignOut() {
 
 <template>
   <div class="flex h-full w-full items-center justify-center px-4 py-8">
-    <div class="flex w-full max-w-md flex-col gap-4 rounded-2xl bg-default p-6 shadow-xl ring-1 ring-default/60 sm:p-8">
-      <div class="flex flex-col gap-1">
-        <h2 class="text-balance text-lg font-semibold text-highlighted">
-          Verify your email
-        </h2>
-        <p class="text-pretty text-sm leading-relaxed text-muted">
-          We sent a verification code to
-          <span class="font-medium text-highlighted">{{ user?.email ?? 'your email' }}</span>.
-          You need to verify your email before you can sync to the cloud or publish projects.
-        </p>
+    <div class="w-full max-w-md">
+      <div class="rounded-2xl bg-default px-7 pt-7 pb-6 shadow-xl ring-1 ring-default/60">
+        <div class="flex flex-col items-center text-center gap-3">
+          <div class="size-12 rounded-full bg-primary/10 ring-1 ring-primary/30 flex items-center justify-center">
+            <UIcon name="i-lucide-mail-check" class="size-6 text-primary" />
+          </div>
+          <p class="text-xs font-medium uppercase tracking-[0.12em] text-muted">
+            Email verification
+          </p>
+          <h2 class="text-balance text-2xl font-semibold tracking-[-0.01em] text-highlighted sm:text-[28px]">
+            Confirm your email to continue
+          </h2>
+          <p class="text-pretty text-base leading-relaxed text-toned max-w-xs">
+            We sent a verification link to
+            <span class="font-semibold text-highlighted break-all">{{ user?.email ?? 'your email' }}</span>.
+            Open it on this device, then come back and refresh.
+          </p>
+        </div>
+
+        <div
+          v-if="message || error"
+          class="mt-5 flex flex-col gap-2"
+        >
+          <UAlert
+            v-if="message"
+            color="success"
+            variant="soft"
+            :title="message"
+          />
+          <UAlert
+            v-if="error"
+            color="error"
+            variant="soft"
+            :title="error"
+          />
+        </div>
+
+        <div class="mt-7 pt-5 border-t border-default/40 flex flex-col gap-3">
+          <UButton
+            block
+            size="lg"
+            color="primary"
+            icon="i-lucide-mail"
+            :loading="sending"
+            :disabled="refreshing"
+            class="min-h-11 justify-center transition-transform active:scale-[0.97]"
+            label="Resend verification email"
+            @click="onResend"
+          />
+          <button
+            type="button"
+            class="self-center text-sm font-medium text-muted underline-offset-4 transition-colors hover:text-highlighted hover:underline disabled:opacity-50"
+            :disabled="sending || refreshing"
+            @click="onAlreadyVerified"
+          >
+            {{ refreshing ? 'Refreshing…' : 'Already verified — refresh' }}
+          </button>
+        </div>
       </div>
 
-      <UAlert
-        v-if="message"
-        color="success"
-        variant="soft"
-        :title="message"
-      />
-      <UAlert
-        v-if="error"
-        color="error"
-        variant="soft"
-        :title="error"
-      />
-
-      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <p class="mt-5 text-center text-sm text-muted">
+        Not you?
         <UButton
-          label="Resend verification"
-          color="primary"
-          icon="i-lucide-mail"
-          :loading="sending"
-          :disabled="refreshing"
-          class="min-h-10 justify-center transition-transform active:scale-[0.97]"
-          @click="onResend"
-        />
-        <UButton
-          label="Already verified — refresh"
+          variant="link"
           color="neutral"
-          variant="outline"
-          icon="i-lucide-refresh-cw"
-          :loading="refreshing"
-          :disabled="sending"
-          class="min-h-10 justify-center transition-transform active:scale-[0.97]"
-          @click="onAlreadyVerified"
+          size="sm"
+          class="px-1 text-muted underline-offset-4 hover:text-highlighted hover:underline"
+          :disabled="sending || refreshing"
+          label="Sign out"
+          @click="onSignOut"
         />
-      </div>
-
-      <UButton
-        label="Sign out"
-        color="neutral"
-        variant="ghost"
-        size="sm"
-        icon="i-lucide-log-out"
-        class="min-h-10 self-start transition-transform active:scale-[0.97]"
-        :disabled="sending || refreshing"
-        @click="onSignOut"
-      />
+      </p>
     </div>
   </div>
 </template>

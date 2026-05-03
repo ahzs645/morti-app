@@ -77,7 +77,7 @@ export default defineNuxtConfig({
       posthogDebug: false,
       appName: 'Morti',
       features: {
-        projectStyleTab: false,
+        projectStyleTab: true,
         promptFurniture: process.env.NUXT_PUBLIC_FEATURES_PROMPT_FURNITURE === 'true'
           || process.env.NUXT_PUBLIC_FEATURE_PROMPT_FURNITURE === 'true',
       },

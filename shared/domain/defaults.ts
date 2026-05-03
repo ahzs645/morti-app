@@ -1,4 +1,5 @@
-import type { CameraState, FurnitureColumn, FurnitureConfig, FurnitureModule, ModuleType, PublicStyle } from './types'
+import type { CameraState, FurnitureColumn, FurnitureConfig, FurnitureModule, MaterialAssignment, ModuleType, PublicStyle } from './types'
+import { CUSTOM_MATERIAL_ID, DEFAULT_MATERIAL_ASSIGNMENTS, findPreset, MATERIAL_PRESETS } from './materials'
 
 // Default furniture config (Qe in compiled). All values in metres.
 export const DEFAULT_FURNITURE_CONFIG: FurnitureConfig = {
@@ -77,6 +78,15 @@ export function defaultColumn(width = DEFAULT_COLUMN_WIDTH): FurnitureColumn {
   }
 }
 
+function defaultAssignment(part: keyof typeof DEFAULT_MATERIAL_ASSIGNMENTS): MaterialAssignment {
+  const seed = DEFAULT_MATERIAL_ASSIGNMENTS[part]
+  const preset = findPreset(seed.presetId)
+  return {
+    presetId: seed.presetId,
+    customColor: preset?.hex ?? seed.customColor,
+  }
+}
+
 export const DEFAULT_PUBLIC_STYLE: PublicStyle = {
   renderStyle: 'rendered',
   technical: {
@@ -95,6 +105,12 @@ export const DEFAULT_PUBLIC_STYLE: PublicStyle = {
       verticalSide: '#2d8ed1',
       horizontalDeck: '#26bf67',
       moduleFront: '#ffc21c',
+    },
+    materials: {
+      carcass: defaultAssignment('carcass'),
+      sides:   defaultAssignment('sides'),
+      deck:    defaultAssignment('deck'),
+      fronts:  defaultAssignment('fronts'),
     },
   },
 }
@@ -148,6 +164,35 @@ function normalizeRenderedColors(input: unknown): PublicStyle['rendered']['color
   }
 }
 
+function normalizeAssignment(
+  input: unknown,
+  fallback: MaterialAssignment,
+): MaterialAssignment {
+  const source = input && typeof input === 'object' ? input as Partial<MaterialAssignment> : {}
+  const presetId = typeof source.presetId === 'string' ? source.presetId : ''
+  const isKnown = MATERIAL_PRESETS.some(p => p.id === presetId) || presetId === CUSTOM_MATERIAL_ID
+  const preset = MATERIAL_PRESETS.find(p => p.id === presetId)
+  const customColor = normalizeHexColor(
+    source.customColor,
+    preset?.hex ?? fallback.customColor,
+  )
+  return {
+    presetId: isKnown ? presetId : fallback.presetId,
+    customColor,
+  }
+}
+
+function normalizeRenderedMaterials(input: unknown): PublicStyle['rendered']['materials'] {
+  const source = input && typeof input === 'object' ? input as Partial<PublicStyle['rendered']['materials']> : {}
+  const fallback = DEFAULT_PUBLIC_STYLE.rendered.materials
+  return {
+    carcass: normalizeAssignment(source.carcass, fallback.carcass),
+    sides:   normalizeAssignment(source.sides,   fallback.sides),
+    deck:    normalizeAssignment(source.deck,    fallback.deck),
+    fronts:  normalizeAssignment(source.fronts,  fallback.fronts),
+  }
+}
+
 export function normalizePublicStyle(input?: PublicStyleInput | null): PublicStyle {
   const source = input && typeof input === 'object' ? input : null
   return {
@@ -157,6 +202,7 @@ export function normalizePublicStyle(input?: PublicStyleInput | null): PublicSty
     },
     rendered: {
       colors: normalizeRenderedColors(source?.rendered?.colors),
+      materials: normalizeRenderedMaterials((source?.rendered as { materials?: unknown } | null | undefined)?.materials),
     },
   }
 }

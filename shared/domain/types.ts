@@ -43,6 +43,13 @@ export interface FurnitureDoc {
 
 export type RenderStyle = 'rendered' | 'technical'
 
+export interface MaterialAssignment {
+  /** Preset id from MATERIAL_PRESETS, or 'custom' to use the customColor hex. */
+  presetId: string
+  /** Hex used when presetId === 'custom'. */
+  customColor: string
+}
+
 export interface PublicStyle {
   renderStyle: RenderStyle
   technical: {
@@ -61,6 +68,12 @@ export interface PublicStyle {
       verticalSide: string
       horizontalDeck: string
       moduleFront: string
+    }
+    materials: {
+      carcass: MaterialAssignment
+      sides: MaterialAssignment
+      deck: MaterialAssignment
+      fronts: MaterialAssignment
     }
   }
 }

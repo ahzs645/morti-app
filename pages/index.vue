@@ -314,20 +314,26 @@ function isDemo(projectId: string): boolean {
     </div>
 
     <div class="w-full max-w-6xl">
-      <div class="sticky top-0 z-20 mb-4 -mx-[max(1rem,calc((100vw-100%)/2))] bg-default/95 backdrop-blur supports-[backdrop-filter]:bg-default/80">
+      <div class="sticky top-0 z-20 mb-4 -mx-[max(1rem,calc((100vw-100%)/2))] border-b border-default/40 bg-default/95 backdrop-blur shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] supports-[backdrop-filter]:bg-default/80">
         <div class="mx-auto flex w-full max-w-6xl min-w-0 flex-col items-stretch justify-between gap-3 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6">
-          <div class="flex min-w-0 flex-row flex-wrap items-baseline gap-x-3 gap-y-1">
+          <div class="flex min-w-0 flex-row flex-wrap items-baseline gap-x-4 gap-y-1">
             <template v-if="isSignedIn">
               <button
                 type="button"
-                :class="['text-balance text-left text-2xl font-semibold transition-[color,transform] active:scale-[0.97] sm:text-3xl', demoMode ? 'text-muted/45 hover:text-muted' : 'text-highlighted']"
+                :class="[
+                  'morti-tab text-balance text-left text-2xl tracking-[-0.015em] transition-[color,transform] duration-200 active:scale-[0.97] sm:text-3xl',
+                  !demoMode ? 'morti-tab--active font-semibold text-highlighted' : 'font-medium text-muted hover:text-default',
+                ]"
                 @click="demoMode = false"
               >
                 Projects
               </button>
               <button
                 type="button"
-                :class="['text-balance text-left text-2xl font-semibold transition-[color,transform] active:scale-[0.97] sm:text-3xl', demoMode ? 'text-highlighted' : 'text-muted/45 hover:text-muted']"
+                :class="[
+                  'morti-tab text-balance text-left text-2xl tracking-[-0.015em] transition-[color,transform] duration-200 active:scale-[0.97] sm:text-3xl',
+                  demoMode ? 'morti-tab--active font-semibold text-highlighted' : 'font-medium text-muted hover:text-default',
+                ]"
                 @click="toggleDemos"
               >
                 Demos
@@ -356,7 +362,7 @@ function isDemo(projectId: string): boolean {
               <UButton
                 icon="i-lucide-plus"
                 label="New project"
-                color="neutral"
+                color="primary"
                 class="transition-transform active:scale-[0.97]"
                 @click="createProject"
               />

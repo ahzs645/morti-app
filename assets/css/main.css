@@ -173,6 +173,89 @@ p {
   outline-offset: -1px;
 }
 
+/* Layered presence for cards on warm dark surfaces.
+   - Top-edge inner highlight simulates a key light on the bezel ("glass-lit").
+   - Hairline ring uses brand border tokens; hover warms toward morti-400.
+   - Ambient drop shadow plus a hover under-glow keyed to the brand hue.
+   GPU-friendly: only box-shadow + transform transition; no layout properties. */
+@utility morti-card-presence {
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.04) inset,
+    0 0 0 1px var(--ui-border),
+    0 1px 2px -1px oklch(0 0 0 / 0.5),
+    0 8px 24px -12px oklch(0 0 0 / 0.55);
+  transition-property: box-shadow, transform;
+  transition-duration: 220ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  will-change: box-shadow, transform;
+
+  &:hover {
+    box-shadow:
+      0 1px 0 0 oklch(1 0 0 / 0.06) inset,
+      0 0 0 1px var(--ui-border-accented),
+      0 1px 2px -1px oklch(0 0 0 / 0.6),
+      0 14px 36px -14px oklch(0 0 0 / 0.65),
+      0 0 32px -8px color-mix(in oklch, var(--color-morti-400) 28%, transparent);
+  }
+  &:active {
+    transform: translateY(0.5px) scale(0.995);
+  }
+}
+
+/* Pinned cards: persistent warm halo + top accent stripe.
+   Stripe is a ::before so it never affects layout or click targets. */
+@utility morti-card-pinned {
+  box-shadow:
+    0 1px 0 0 color-mix(in oklch, var(--color-morti-300) 18%, transparent) inset,
+    0 0 0 1px color-mix(in oklch, var(--color-morti-400) 38%, var(--ui-border)),
+    0 1px 2px -1px oklch(0 0 0 / 0.5),
+    0 12px 32px -14px oklch(0 0 0 / 0.6),
+    0 0 28px -10px color-mix(in oklch, var(--color-morti-400) 32%, transparent);
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--color-morti-300) 30%,
+      var(--color-morti-200) 50%,
+      var(--color-morti-300) 70%,
+      transparent 100%
+    );
+    opacity: 0.85;
+    pointer-events: none;
+    z-index: 5;
+  }
+}
+
+/* Badge accents — minted, not pasted. */
+@utility morti-badge-published {
+  background: color-mix(in oklch, var(--ui-bg-elevated) 80%, transparent);
+  color: var(--ui-text-highlighted);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-morti-400) 35%, var(--ui-border)),
+    0 1px 0 0 oklch(1 0 0 / 0.06) inset,
+    0 1px 2px -1px oklch(0 0 0 / 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+@utility morti-badge-demo {
+  background: color-mix(in oklch, var(--color-morti-700) 55%, var(--ui-bg-elevated));
+  color: var(--ui-text-highlighted);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-morti-400) 50%, transparent),
+    0 1px 0 0 oklch(1 0 0 / 0.08) inset,
+    0 1px 2px -1px oklch(0 0 0 / 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 @utility backface-hidden {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
@@ -200,4 +283,30 @@ p {
 @keyframes morti-rise-out {
   from { opacity: 1; transform: translateY(0); }
   to { opacity: 0; transform: translateY(4px); }
+}
+
+/* Sticky-header tab affordance — animated brand underline.
+   Active state slides into view via scale-x; inactive recedes. */
+.morti-tab {
+  position: relative;
+  padding-bottom: 4px;
+}
+.morti-tab::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-morti-400);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.morti-tab--active::after {
+  transform: scaleX(1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .morti-tab::after { transition: none; }
 }

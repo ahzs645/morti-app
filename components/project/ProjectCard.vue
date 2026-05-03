@@ -85,7 +85,10 @@ const menuItems = computed(() => [
 
 <template>
   <UCard
-    class="relative cursor-pointer overflow-hidden shadow-sm transition-transform active:scale-[0.99]"
+    :class="[
+      'group/card relative cursor-pointer overflow-hidden',
+      isPinned ? 'morti-card-pinned' : 'morti-card-presence',
+    ]"
     :ui="{ body: 'relative p-4 sm:p-5' }"
   >
     <NuxtLink
@@ -111,7 +114,8 @@ const menuItems = computed(() => [
             color="neutral"
             variant="solid"
             size="sm"
-            class="bg-default/85 text-highlighted shadow-sm ring-1 ring-default/60 backdrop-blur"
+            :ui="{ label: 'uppercase font-semibold tracking-[0.08em]' }"
+            class="morti-badge-published"
           />
           <UBadge
             v-if="demo"
@@ -119,37 +123,42 @@ const menuItems = computed(() => [
             color="neutral"
             variant="solid"
             size="sm"
-            class="bg-default/85 text-highlighted shadow-sm ring-1 ring-default/60 backdrop-blur"
+            :ui="{ label: 'italic lowercase font-normal' }"
+            class="morti-badge-demo"
           />
         </div>
       </div>
 
-      <div class="pointer-events-auto flex items-center justify-between gap-2">
+      <div class="pointer-events-auto flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">
-          <h2
-            :id="cardTitleId"
-            class="truncate text-balance font-semibold text-highlighted"
-          >
-            {{ project.name }}
-          </h2>
           <p
             v-if="showDate && formattedDate"
-            class="text-sm tabular-nums text-muted"
+            class="mb-0.5 text-[11px] uppercase tracking-[0.08em] tabular-nums text-muted/80"
           >
             {{ formattedDate }}
           </p>
+          <h2
+            :id="cardTitleId"
+            class="text-balance text-[17px] font-semibold leading-[1.25] tracking-[-0.012em] text-highlighted line-clamp-2 sm:text-[18px]"
+          >
+            {{ project.name }}
+          </h2>
         </div>
 
         <div
           v-if="showActions"
-          class="flex shrink-0 items-center gap-0.5"
+          class="-mr-1 flex shrink-0 items-center gap-0.5"
+          :class="showDate && formattedDate ? 'mt-[18px]' : 'mt-0.5'"
         >
           <UButton
             icon="i-lucide-pin"
             :color="isPinned ? 'primary' : 'neutral'"
             variant="ghost"
-            size="sm"
-            class="opacity-100 transition-transform active:scale-[0.97]"
+            size="xs"
+            :class="[
+              'text-muted transition-transform hover:text-highlighted active:scale-[0.97]',
+              isPinned && 'text-highlighted ring-1 ring-[color:color-mix(in_oklch,var(--color-morti-400)_55%,transparent)]',
+            ]"
             :aria-label="isPinned ? 'Unpin project' : 'Pin project'"
             :aria-pressed="isPinned"
             @click.stop.prevent="emit('togglePin', project.id)"
@@ -163,8 +172,8 @@ const menuItems = computed(() => [
               icon="i-lucide-ellipsis-vertical"
               color="neutral"
               variant="ghost"
-              size="sm"
-              class="transition-transform active:scale-[0.97]"
+              size="xs"
+              class="text-muted transition-transform hover:text-highlighted active:scale-[0.97]"
               aria-label="Project actions"
             />
           </UDropdownMenu>

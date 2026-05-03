@@ -14,8 +14,9 @@ import {
   bakeSurfaceIdsForScene,
   SurfaceIdPalette,
 } from '~~/shared/three/outline'
-import { makePanelMaterial, type PanelMaterialMode } from '~~/shared/three/materials'
+import { makePanelMaterial, type PanelMaterialMode, type PanelMaterialSpec } from '~~/shared/three/materials'
 import { DEFAULT_CAMERA_STATE, hexColorToNumber, normalizePublicStyle } from '~~/shared/domain/defaults'
+import { resolveMaterial, type CabinetPart } from '~~/shared/domain/materials'
 import type { CameraState, CompiledPanel, FurnitureDoc, PanelOperation, PublicStyle } from '~~/shared/domain/types'
 
 // ---------------------------------------------------------------------------
@@ -545,21 +546,45 @@ const gridColor = computed(() => {
   return `#${getThemeColor('neutral500').hex.toString(16).padStart(6, '0')}`
 })
 
-function panelColor(panel: CompiledPanel): number {
+function partForPanel(panel: CompiledPanel): CabinetPart {
+  if (panel.role === 'vertical-side') return 'sides'
+  if (panel.role === 'horizontal-deck') return 'deck'
+  if (panel.role === 'door-front' || panel.role === 'drawer-front') return 'fronts'
+  return 'carcass'
+}
+
+function legacyHexForPart(part: CabinetPart): string {
+  const rendered = resolvedPublicStyle.value.rendered.colors
+  if (part === 'sides') return rendered.verticalSide
+  if (part === 'deck') return rendered.horizontalDeck
+  if (part === 'fronts') return rendered.moduleFront
+  return rendered.defaultPanel
+}
+
+function panelMaterialSpec(panel: CompiledPanel): PanelMaterialSpec {
   if (props.renderMode === 'technical') {
-    return hexFromString(resolvedPublicStyle.value.technical.colors.fills, 0x1c1917)
+    return { color: hexFromString(resolvedPublicStyle.value.technical.colors.fills, 0x1c1917) }
   }
-  if (props.renderMode === 'render-debug') {
-    const rendered = resolvedPublicStyle.value.rendered.colors
-    if (panel.role === 'vertical-side') return hexFromString(rendered.verticalSide, 0x2d8ed1)
-    if (panel.role === 'horizontal-deck') return hexFromString(rendered.horizontalDeck, 0x26bf67)
-    if (panel.role === 'door-front' || panel.role === 'drawer-front') return hexFromString(rendered.moduleFront, 0xffc21c)
-    return hexFromString(rendered.defaultPanel, 0xaaaaaa)
+
+  // Both `render-debug` and `rendered` resolve through the per-part material
+  // assignment. (In Style view `canvasRenderMode` only ever yields
+  // `render-debug` or `technical` — see pages/project/[id].vue:96-100 — so
+  // gating materials behind `'rendered'` would make the picker invisible.)
+  const part = partForPanel(panel)
+  const fallbackHex = legacyHexForPart(part)
+  const assignment = resolvedPublicStyle.value.rendered.materials[part]
+  const resolved = resolveMaterial(assignment.presetId, assignment.customColor, fallbackHex)
+
+  return {
+    color: hexFromString(resolved.hex, 0xaaaaaa),
+    roughness: resolved.roughness,
+    metalness: resolved.metalness,
+    grain: resolved.grain,
   }
-  if (panel.role === 'door-front' || panel.role === 'drawer-front') {
-    return hexFromString(resolvedPublicStyle.value.rendered.colors.moduleFront, 0xffc21c)
-  }
-  return hexFromString(resolvedPublicStyle.value.rendered.colors.defaultPanel, 0xaaaaaa)
+}
+
+function panelColor(panel: CompiledPanel): number {
+  return panelMaterialSpec(panel).color
 }
 
 function addSolidColorAttribute(geometry: THREE.BufferGeometry, color = 0xf5f5f5) {
@@ -707,7 +732,7 @@ function buildScene(options: BuildSceneOptions = {}) {
     const group = new THREE.Group()
     const geometry = compilePartGeometry(panel, compiled.operations)
     addOutlineExcludeAttribute(geometry, 0)
-    const material = makePanelMaterial(panelMaterialMode(), panelColor(panel))
+    const material = makePanelMaterial(panelMaterialMode(), panelMaterialSpec(panel))
     const mesh = new THREE.Mesh(geometry, material)
     mesh.castShadow = panelMaterialMode() === 'shaded'
     mesh.receiveShadow = panelMaterialMode() === 'shaded'
@@ -1511,11 +1536,31 @@ useThreejsCanvas({
 // Watchers
 // ---------------------------------------------------------------------------
 
+/** A stable signature of every publicStyle field that affects panel materials,
+ *  background, or grid. Changing any of these must trigger a scene rebuild so
+ *  the Three.MeshStandardMaterial picks up the new color/roughness/metalness. */
+const publicStyleSignature = computed(() => {
+  const s = resolvedPublicStyle.value
+  const m = s.rendered.materials
+  const c = s.rendered.colors
+  const t = s.technical.colors
+  return [
+    s.renderStyle,
+    m.carcass.presetId, m.carcass.customColor,
+    m.sides.presetId,   m.sides.customColor,
+    m.deck.presetId,    m.deck.customColor,
+    m.fronts.presetId,  m.fronts.customColor,
+    c.background, c.grid, c.defaultPanel, c.verticalSide, c.horizontalDeck, c.moduleFront,
+    t.background, t.grid, t.outlines, t.fills,
+  ].join('|')
+})
+
 watch(
   () => ({
     doc: activeDoc.value,
     renderMode: props.renderMode,
     colorsGeneration: colors.value.generation,
+    publicStyle: publicStyleSignature.value,
   }),
   (next, previous) => {
     buildScene({ preservePanelTransforms: Boolean(previous && next.doc === previous.doc) })

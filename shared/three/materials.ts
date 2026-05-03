@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { getGrainTexture } from './grain-textures'
+import type { MaterialGrain } from '~~/shared/domain/materials'
 
 /**
  * Material registry — mirrors the verbatim Morti `Dt_x5Iy5.js` materials at
@@ -12,17 +14,45 @@ import * as THREE from 'three'
 
 export type PanelMaterialMode = 'shaded' | 'unlit' | 'outline'
 
-export function makePanelMaterial(mode: PanelMaterialMode, color: number): THREE.Material {
+export interface PanelMaterialSpec {
+  color: number
+  /** 0-1; defaults to 0.62 (verbatim Morti baseline). */
+  roughness?: number
+  /** 0-1; defaults to 0.08 (verbatim Morti baseline). */
+  metalness?: number
+  /** Wood-grain pattern for triplanar texture sampling. Lacquers/custom
+   *  pass `'lacquer-white' | 'lacquer-charcoal' | 'custom'` (or omit) to
+   *  render flat, no grain. */
+  grain?: MaterialGrain
+  /** World-space grain density in tiles-per-meter. Higher = tighter pattern.
+   *  Defaults to 5 (one stripe roughly every 20cm of panel face). */
+  grainScale?: number
+}
+
+export function makePanelMaterial(
+  mode: PanelMaterialMode,
+  colorOrSpec: number | PanelMaterialSpec,
+): THREE.Material {
+  const spec: PanelMaterialSpec = typeof colorOrSpec === 'number'
+    ? { color: colorOrSpec }
+    : colorOrSpec
+  const color = new THREE.Color(spec.color)
+
   if (mode === 'shaded') {
-    return new THREE.MeshStandardMaterial({
-      color: new THREE.Color(color),
-      metalness: 0.08,
-      roughness: 0.62,
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      metalness: spec.metalness ?? 0.08,
+      roughness: spec.roughness ?? 0.62,
     })
+    const grainTex = spec.grain ? getGrainTexture(spec.grain) : null
+    if (grainTex) {
+      attachTriplanarGrain(material, grainTex, spec.grainScale ?? 5)
+    }
+    return material
   }
   if (mode === 'unlit') {
     return new THREE.MeshBasicMaterial({
-      color: new THREE.Color(color),
+      color,
       depthTest: true,
       depthWrite: true,
       toneMapped: false,
@@ -30,7 +60,7 @@ export function makePanelMaterial(mode: PanelMaterialMode, color: number): THREE
   }
   // outline (basic)
   return new THREE.MeshBasicMaterial({
-    color: new THREE.Color(color),
+    color,
     side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: 1,
@@ -110,4 +140,84 @@ export function makeOutlineMaterial(color: number = 0xf59e0b): THREE.MeshBasicMa
  */
 export function makeBackgroundMaterial(color: number): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({ color: new THREE.Color(color) })
+}
+
+/**
+ * Inject world-space triplanar sampling of a grayscale grain DataTexture into
+ * a MeshStandardMaterial. The texture multiplies `diffuseColor.rgb` so the
+ * base color is preserved while stripes darken/lighten it. Roughness is also
+ * modulated slightly so polished bands shine differently than open grain.
+ *
+ * Triplanar (rather than UV) because:
+ *   - BoxGeometry UVs are per-face 0..1, ignoring world units; tiling
+ *     produces inconsistent grain density across panel sizes.
+ *   - CSG boolean cuts (door pulls) can scramble UVs entirely.
+ */
+function attachTriplanarGrain(
+  material: THREE.MeshStandardMaterial,
+  grainTex: THREE.DataTexture,
+  tilesPerMeter: number,
+): void {
+  // Expose the texture so Three's built-in resource tracking disposes it
+  // alongside the material on cleanup. Setting `map` also lets MeshStandard's
+  // existing diffuse-map shader chunks compile in (we override their UV in
+  // the shader injection below).
+  material.map = grainTex
+  material.userData.grainScale = tilesPerMeter
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uGrainScale = { value: tilesPerMeter }
+
+    // -- VERTEX: pass world position + world normal to the fragment shader.
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vWorldPos_grain;
+varying vec3 vWorldNormal_grain;`,
+      )
+      .replace(
+        '#include <fog_vertex>',
+        `#include <fog_vertex>
+vWorldPos_grain = (modelMatrix * vec4(transformed, 1.0)).xyz;
+vWorldNormal_grain = normalize(mat3(modelMatrix) * objectNormal);`,
+      )
+
+    // -- FRAGMENT: triplanar-sample `map` using world-space coords + the
+    // dominant face axis, then modulate diffuseColor and roughness.
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vWorldPos_grain;
+varying vec3 vWorldNormal_grain;
+uniform float uGrainScale;`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        `// Triplanar sample of grain texture (overrides the standard <map_fragment>).
+vec3 blend = abs(vWorldNormal_grain);
+blend = pow(blend, vec3(4.0));
+blend /= max(blend.x + blend.y + blend.z, 1e-5);
+vec2 uvX = vWorldPos_grain.zy * uGrainScale;
+vec2 uvY = vWorldPos_grain.xz * uGrainScale;
+vec2 uvZ = vWorldPos_grain.xy * uGrainScale;
+vec3 cX = texture2D(map, uvX).rgb;
+vec3 cY = texture2D(map, uvY).rgb;
+vec3 cZ = texture2D(map, uvZ).rgb;
+vec3 grainSample = cX * blend.x + cY * blend.y + cZ * blend.z;
+// Texture is encoded so 1.0 ≈ neutral, range [0.5, 1.15]; expand back.
+float grainValue = grainSample.r;
+diffuseColor.rgb *= grainValue;`,
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        `#include <roughnessmap_fragment>
+// Polished bands (high grainValue) look slightly smoother; open pores rougher.
+roughnessFactor *= mix(1.08, 0.92, clamp(grainValue, 0.0, 1.0));`,
+      )
+  }
+
+  // Force a recompile so the injection takes effect immediately.
+  material.needsUpdate = true
 }

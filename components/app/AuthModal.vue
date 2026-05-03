@@ -14,23 +14,24 @@ const errorMsg = ref('')
 const loading = ref(false)
 
 const title = computed(() =>
-  step.value === 'email' ? 'Sign in with email' : 'Enter your code',
+  step.value === 'email' ? 'Sign in' : 'Check your email',
 )
-const description
-  = 'We’ll email you a one-time code. New accounts are created automatically and must verify email before editing or using the cloud.'
+const description = computed(() =>
+  step.value === 'email'
+    ? 'We’ll email you a one-time code.'
+    : 'Enter the 6-digit code we just sent.',
+)
+const stepIndex = computed(() => (step.value === 'email' ? 1 : 2))
 
-watch(
-  open,
-  (v) => {
-    if (v) {
-      errorMsg.value = ''
-      loading.value = false
-      step.value = 'email'
-      code.value = ''
-      otpId.value = ''
-    }
-  },
-)
+watch(open, (v) => {
+  if (v) {
+    errorMsg.value = ''
+    loading.value = false
+    step.value = 'email'
+    code.value = ''
+    otpId.value = ''
+  }
+})
 
 async function submitEmail() {
   errorMsg.value = ''
@@ -46,8 +47,7 @@ async function submitEmail() {
     step.value = 'code'
   }
   catch (err: any) {
-    errorMsg.value
-      = err?.statusMessage || err?.message || 'Something went wrong.'
+    errorMsg.value = err?.statusMessage || err?.message || 'Something went wrong.'
   }
   finally {
     loading.value = false
@@ -67,8 +67,7 @@ async function submitCode() {
     emit('success')
   }
   catch (err: any) {
-    errorMsg.value
-      = err?.statusMessage || err?.message || 'Something went wrong.'
+    errorMsg.value = err?.statusMessage || err?.message || 'Something went wrong.'
   }
   finally {
     loading.value = false
@@ -85,10 +84,47 @@ function resendCode() {
 <template>
   <AppDialog
     v-model:open="open"
-    :title="title"
-    :description="description"
     :dismissible="false"
   >
+    <template #prependBody>
+      <header class="flex flex-col gap-3">
+        <div
+          class="flex items-center gap-3"
+          role="progressbar"
+          :aria-valuenow="stepIndex"
+          aria-valuemin="1"
+          aria-valuemax="2"
+          :aria-label="`Step ${stepIndex} of 2`"
+        >
+          <span
+            class="h-1 flex-1 rounded-full bg-primary transition-colors duration-300"
+          />
+          <span
+            class="h-1 flex-1 rounded-full transition-colors duration-300"
+            :class="stepIndex === 2 ? 'bg-primary' : 'bg-elevated'"
+          />
+          <span class="text-xs tabular-nums text-muted">{{ stepIndex }}/2</span>
+        </div>
+
+        <Transition
+          name="auth-title"
+          mode="out-in"
+        >
+          <div
+            :key="step"
+            class="flex flex-col gap-1"
+          >
+            <h2 class="text-balance text-lg font-semibold text-highlighted">
+              {{ title }}
+            </h2>
+            <p class="text-pretty text-sm text-muted">
+              {{ description }}
+            </p>
+          </div>
+        </Transition>
+      </header>
+    </template>
+
     <div class="flex flex-col gap-3">
       <UAlert
         v-if="errorMsg"
@@ -115,12 +151,22 @@ function resendCode() {
       </template>
 
       <template v-else>
-        <p class="text-pretty text-sm text-muted">
-          We sent a code to
-          <span class="font-medium text-highlighted">{{ email.trim() }}</span>.
-        </p>
+        <div class="flex items-baseline justify-between gap-2">
+          <p class="truncate text-sm text-muted">
+            Sent to
+            <span class="font-medium text-highlighted">{{ email.trim() }}</span>
+          </p>
+          <UButton
+            variant="link"
+            color="primary"
+            size="xs"
+            class="shrink-0 px-0"
+            label="Change"
+            @click="resendCode"
+          />
+        </div>
         <UFormField
-          label="Code"
+          label="Verification code"
           class="w-full"
         >
           <UInput
@@ -128,30 +174,24 @@ function resendCode() {
             type="text"
             inputmode="numeric"
             autocomplete="one-time-code"
+            maxlength="6"
             class="w-full"
-            :ui="{ base: 'min-h-10 tabular-nums tracking-widest' }"
-            placeholder="123456"
+            :ui="{ base: 'min-h-14 text-center text-2xl font-medium tabular-nums tracking-[0.4em]' }"
+            placeholder="——————"
             @keydown.enter.prevent="submitCode"
           />
         </UFormField>
-        <UButton
-          variant="link"
-          color="primary"
-          class="self-start px-0"
-          label="Use a different email"
-          @click="resendCode"
-        />
       </template>
     </div>
 
     <template #footer="{ close }">
-      <div class="grid w-full grid-cols-2 gap-2">
+      <div class="grid w-full grid-cols-3 gap-2">
         <UButton
           label="Cancel"
           type="button"
           color="neutral"
-          variant="outline"
-          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
+          variant="ghost"
+          class="col-span-1 w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :disabled="loading"
           @click="close()"
         />
@@ -159,7 +199,7 @@ function resendCode() {
           v-if="step === 'email'"
           label="Send code"
           type="button"
-          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
+          class="col-span-2 w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="loading"
           @click="submitEmail"
         />
@@ -167,7 +207,7 @@ function resendCode() {
           v-else
           label="Sign in"
           type="button"
-          class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
+          class="col-span-2 w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="loading"
           @click="submitCode"
         />
@@ -175,3 +215,22 @@ function resendCode() {
     </template>
   </AppDialog>
 </template>
+
+<style scoped>
+.auth-title-enter-active,
+.auth-title-leave-active {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+.auth-title-enter-from,
+.auth-title-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-title-enter-active,
+  .auth-title-leave-active {
+    transition: none;
+  }
+}
+</style>
