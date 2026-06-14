@@ -2,6 +2,10 @@
 
 Open-source parametric furniture design for cabinets, shelves, wardrobes, and other panel-based pieces. Morti is local-first: projects are edited in the browser with Yjs and IndexedDB, then can optionally sync to a Postgres-backed cloud service for publishing, sharing, and remixing.
 
+<p align="center">
+  <img src="docs/assets/morti-demo.gif" alt="Morti furniture designer demo showing a parametric wardrobe in the 3D editor" width="900" />
+</p>
+
 <a href="https://www.digitalocean.com/?refcode=228d4bc321e8&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge"><img src="https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%203.svg" alt="DigitalOcean Referral Badge" /></a>
 
 ## Features
