@@ -6,12 +6,15 @@ const require = createRequire(process.env.NODE_REQUIRE_FROM || import.meta.url)
 const { Pool } = require('pg')
 
 const OLD_DEMOS_URL = process.env.POCKETBASE_DEMOS_URL
-  || 'https://api.madera.app/api/collections/madera_projects/records?perPage=100&filter=(is_demo=true%20%26%26%20visibility=%22public%22)'
 const DEMO_OWNER_ID = process.env.DEMO_OWNER_ID || 'legacy_demo_owner'
-const DEMO_OWNER_EMAIL = process.env.DEMO_OWNER_EMAIL || 'demo@morti.app'
+const DEMO_OWNER_EMAIL = process.env.DEMO_OWNER_EMAIL || 'demo@example.invalid'
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is required.')
+}
+
+if (!OLD_DEMOS_URL) {
+  throw new Error('POCKETBASE_DEMOS_URL is required.')
 }
 
 const pool = new Pool({

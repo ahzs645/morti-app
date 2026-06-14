@@ -1,4 +1,5 @@
 .git
+.github
 .nuxt
 .output
 .secrets
@@ -7,3 +8,15 @@ npm-debug.log*
 .env
 .env.*
 !.env.example
+digitalocean-ssh-key.md
+*.pem
+*.key
+*.p8
+*.p12
+*.crt
+id_rsa*
+id_ed25519*
+deploy-key*
+promo-video
+morti-video-edit
+source-analysis

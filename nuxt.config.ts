@@ -1,4 +1,7 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+const analyticsScriptSrc = process.env.NUXT_PUBLIC_ANALYTICS_SCRIPT_SRC?.trim() || ''
+const analyticsSiteId = process.env.NUXT_PUBLIC_ANALYTICS_SITE_ID?.trim() || ''
+
 export default defineNuxtConfig({
   future: { compatibilityVersion: 4 },
   srcDir: '.',
@@ -36,9 +39,9 @@ export default defineNuxtConfig({
         { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
         { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
       ],
-      script: [
-        { src: 'https://stats.morti.app/t.js', defer: true, 'data-site': '1' },
-      ],
+      script: analyticsScriptSrc
+        ? [{ src: analyticsScriptSrc, defer: true, ...(analyticsSiteId ? { 'data-site': analyticsSiteId } : {}) }]
+        : [],
     },
   },
 
@@ -83,10 +86,10 @@ export default defineNuxtConfig({
     localAuthBypass: process.env.LOCAL_AUTH_BYPASS === 'true',
     public: {
       appBaseUrl: process.env.NUXT_PUBLIC_APP_BASE_URL || process.env.APP_BASE_URL || '',
-      posthogKey: 'phc_A6uepvw77fYmapESpFBiwr6Utk3WPaKtzpByTehZbpkL',
-      posthogHost: 'https://e.morti.app',
-      posthogUiHost: 'https://eu.posthog.com',
-      posthogDebug: false,
+      posthogKey: process.env.NUXT_PUBLIC_POSTHOG_KEY || '',
+      posthogHost: process.env.NUXT_PUBLIC_POSTHOG_HOST || '',
+      posthogUiHost: process.env.NUXT_PUBLIC_POSTHOG_UI_HOST || '',
+      posthogDebug: process.env.NUXT_PUBLIC_POSTHOG_DEBUG === 'true',
       appName: 'Morti',
       features: {
         projectStyleTab: true,

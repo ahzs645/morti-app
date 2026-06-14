@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: morti
+      POSTGRES_USER: morti
+      POSTGRES_PASSWORD: morti_dev_password
+    volumes:
+      - morti_dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U morti -d morti"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: node:22-bookworm-slim
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: 3000
+      APP_BASE_URL: http://localhost:3000
+      NUXT_PUBLIC_APP_BASE_URL: http://localhost:3000
+      DATABASE_URL: postgres://morti:morti_dev_password@db:5432/morti
+      AUTH_SECRET: morti-local-development-secret-change-me-32-chars
+      LOCAL_AUTH_BYPASS: "true"
+      AI_FURNITURE_ALLOW_LOCAL_UNAUTH: "false"
+      POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN:-}
+      POSTMARK_FROM_EMAIL: ${POSTMARK_FROM_EMAIL:-}
+      POSTMARK_MESSAGE_STREAM: ${POSTMARK_MESSAGE_STREAM:-outbound}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_AI_API_TOKEN: ${CLOUDFLARE_AI_API_TOKEN:-}
+      CLOUDFLARE_AI_MODEL: ${CLOUDFLARE_AI_MODEL:-@cf/openai/gpt-oss-120b}
+      NUXT_PUBLIC_FEATURES_PROMPT_FURNITURE: ${NUXT_PUBLIC_FEATURES_PROMPT_FURNITURE:-false}
+      NUXT_PUBLIC_ANALYTICS_SCRIPT_SRC: ${NUXT_PUBLIC_ANALYTICS_SCRIPT_SRC:-}
+      NUXT_PUBLIC_ANALYTICS_SITE_ID: ${NUXT_PUBLIC_ANALYTICS_SITE_ID:-}
+      NUXT_PUBLIC_POSTHOG_KEY: ${NUXT_PUBLIC_POSTHOG_KEY:-}
+      NUXT_PUBLIC_POSTHOG_HOST: ${NUXT_PUBLIC_POSTHOG_HOST:-}
+      NUXT_PUBLIC_POSTHOG_UI_HOST: ${NUXT_PUBLIC_POSTHOG_UI_HOST:-}
+      NUXT_PUBLIC_POSTHOG_DEBUG: ${NUXT_PUBLIC_POSTHOG_DEBUG:-false}
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - morti_dev_node_modules:/app/node_modules
+
+volumes:
+  morti_dev_postgres_data:
+  morti_dev_node_modules:

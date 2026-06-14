@@ -1,6 +1,9 @@
 {
   "name": "morti",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Open-source parametric furniture designer with local-first projects, cloud sync, publishing, and 3D export.",
+  "license": "MIT",
+  "private": false,
   "type": "module",
   "scripts": {
     "build": "nuxt build",
@@ -29,12 +32,13 @@
     "yjs": "^13.6.30"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.18.0"
   },
   "devDependencies": {
     "@types/pg": "^8.20.0",
     "@types/three": "^0.184.0",
     "tailwindcss": "^4.2.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.5"
   }
 }

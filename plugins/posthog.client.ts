@@ -53,8 +53,8 @@ export default defineNuxtPlugin((nuxtApp) => {
     client = posthog
 
     posthog.init(posthogKey, {
-      api_host: posthogHost,
-      ui_host: posthogUiHost,
+      ...(posthogHost ? { api_host: posthogHost } : {}),
+      ...(posthogUiHost ? { ui_host: posthogUiHost } : {}),
       capture_pageview: 'history_change',
     })
 
