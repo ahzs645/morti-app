@@ -4,6 +4,7 @@ const roleCodes: Record<string, string> = {
   'back-panel': 'B',
   'vertical-side': 'S',
   'horizontal-deck': 'H',
+  'internal-shelf': 'I',
   'door-front': 'O',
   'drawer-front': 'D',
   'drawer-side': 'D',

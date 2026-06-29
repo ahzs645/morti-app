@@ -2,7 +2,7 @@
 import type * as Y from 'yjs'
 import type { AiFurnitureDraft, AiFurnitureGenerateResponse } from '~~/shared/domain/ai-furniture'
 import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
-import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
+import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_SHELF_COUNT, SHELF_COUNT_MAX, SHELF_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
 import type { FurnitureConfig, FurnitureModule, ModuleType } from '~~/shared/domain/types'
 import { validateFurnitureDocIssues } from '~~/shared/domain/assembly-validation'
 import {
@@ -15,6 +15,7 @@ import {
   setColumnWidth,
   setConfigValue,
   setDrawerCount,
+  setShelfCount,
   setModuleHeight,
   setModuleType,
 } from '~~/shared/yjs/doc'
@@ -270,6 +271,19 @@ function updateSelectedModulesDrawerCount(drawerCount: number) {
   }
 }
 
+function clampShelfCount(shelfCount: number): number {
+  return Math.max(SHELF_COUNT_MIN, Math.min(SHELF_COUNT_MAX, Math.round(shelfCount)))
+}
+
+function updateSelectedModulesShelfCount(shelfCount: number) {
+  const next = clampShelfCount(shelfCount)
+  for (const info of selectedModuleInfos.value) {
+    if (info.module.type === 'shelves') {
+      setShelfCount(props.ydoc, info.columnIndex, info.moduleIndex, next)
+    }
+  }
+}
+
 // --- Column-resize drag (multi-target aware) ---
 const Al = 220
 const pxPerMeter = computed<number>(() => Al * (clampedZoomPercent.value / 100))
@@ -457,6 +471,12 @@ const selectedDrawerCountValue = computed(() => {
   if (selectedTypeValue.value !== 'drawer') return ''
   const first = selectedModuleInfos.value[0]?.module.drawerCount
   return typeof first === 'number' && selectedModuleInfos.value.every(info => info.module.type === 'drawer' && info.module.drawerCount === first) ? String(first) : ''
+})
+
+const selectedShelfCountValue = computed(() => {
+  if (selectedTypeValue.value !== 'shelves') return ''
+  const first = selectedModuleInfos.value[0]?.module.shelfCount
+  return typeof first === 'number' && selectedModuleInfos.value.every(info => info.module.type === 'shelves' && info.module.shelfCount === first) ? String(first) : ''
 })
 
 const selectedTypeItems = computed(() => [
@@ -671,6 +691,19 @@ function onSelectedDrawerCountCommit(event: Event) {
   input.value = String(next)
 }
 
+function onSelectedShelfCountCommit(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  if (!input) return
+  const value = Number(input.value.trim())
+  const next = Math.round(value)
+  if (!Number.isFinite(value) || next < SHELF_COUNT_MIN || next > SHELF_COUNT_MAX) {
+    input.value = selectedShelfCountValue.value
+    return
+  }
+  updateSelectedModulesShelfCount(next)
+  input.value = String(next)
+}
+
 if (getCurrentScope()) {
   onScopeDispose(() => {
     abortAiGeneration()
@@ -810,6 +843,24 @@ if (getCurrentScope()) {
                         aria-label="Number of drawers in selected modules"
                         @keydown.enter.prevent="onSelectedDrawerCountCommit"
                         @blur="onSelectedDrawerCountCommit"
+                      >
+                    </dd>
+                  </template>
+
+                  <template v-if="selectedTypeValue === 'shelves'">
+                    <dt class="self-center text-muted">
+                      Shelves
+                    </dt>
+                    <dd class="min-w-0">
+                      <input
+                        :value="selectedShelfCountValue"
+                        type="text"
+                        inputmode="numeric"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                        placeholder="mixed"
+                        aria-label="Number of internal shelves in selected modules"
+                        @keydown.enter.prevent="onSelectedShelfCountCommit"
+                        @blur="onSelectedShelfCountCommit"
                       >
                     </dd>
                   </template>

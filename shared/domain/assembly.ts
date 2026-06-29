@@ -631,8 +631,34 @@ function compileDrawer(module: FurnitureModule, cell: CompiledCellBounds, config
   return { panels, operations }
 }
 
+function compileShelves(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
+  const panels: CompiledPanel[] = []
+  const count = Math.max(1, Math.min(16, Math.floor(module.shelfCount ?? 1)))
+  const interiorHeight = cell.yMax - cell.yMin
+  const gap = interiorHeight / (count + 1)
+  const centerX = (cell.xMin + cell.xMax) / 2
+  const centerZ = (cell.zMin + cell.zMax) / 2
+  const width = Math.max(DEGENERATE_MIN_SIZE, cell.width)
+  const boardDepth = Math.max(DEGENERATE_MIN_SIZE, cell.depth)
+
+  for (let shelfIndex = 0; shelfIndex < count; shelfIndex++) {
+    const y = cell.yMin + gap * (shelfIndex + 1)
+    panels.push(makePanel({
+      key: `internal-shelf:${module.id}:${shelfIndex}`,
+      role: 'internal-shelf',
+      sourceModuleId: module.id,
+      position: { x: centerX, y, z: centerZ },
+      size: { width, height: boardDepth, thickness: config.panelThickness },
+      orientation: 'horizontal-xz',
+    }))
+  }
+
+  return { panels, operations: [] as PanelOperation[] }
+}
+
 function compileModule(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
   if (module.type === 'shelf') return { panels: [] as CompiledPanel[], operations: [] as PanelOperation[] }
+  if (module.type === 'shelves') return compileShelves(module, cell, config)
   if (module.type === 'drawer') return compileDrawer(module, cell, config)
   return compileDoorOrFrontPanels(module, cell, config)
 }
