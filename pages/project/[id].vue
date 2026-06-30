@@ -706,6 +706,7 @@ const canvasChromeTeleportSelector = computed(() =>
             v-else-if="!userNeedsEmailVerification && viewMode === 'cutlist' && docRef"
             v-model:selected-drawing-key="cutlistSelectedDrawingKey"
             :ydoc="(docRef as any)"
+            :project-name="project?.name ?? 'cutlist'"
             class="min-h-0 flex-1 px-3 pb-3 sm:px-5 sm:pb-5"
           />
           <div

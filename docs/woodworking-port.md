@@ -30,7 +30,7 @@ cutlist, and `.morti` export "for free".
 | Internal shelves inside a bay | **`shelves` module** | Added |
 | Vertical dividers / mullions in a bay | **`dividers` module** | Added |
 | `getDimensions` (cut list) | Cutlist view (`shared/domain/cutlist.ts`) | Exists |
-| `sheet2export` (CSV/JSON/HTML/MD) | Cutlist export | Partial — formats to add |
+| `sheet2export` (CSV/JSON/HTML/MD) | Cutlist export (`shared/domain/cutlist-export.ts`) | Added |
 | `magicColors` / materials | `PublicStyle` materials + style panel | Exists |
 | `magicDowels` / `magicDriller` | `PanelOperation` (`through-hole`, `rail-cut`) | Partial — UI to add |
 | Multi-unit (mm/cm/in/board-ft) | metric-only today | To add |
@@ -193,8 +193,17 @@ is closer to your part and adjust those three axis-specific spots.
 *Left bay: a `dividers` module (3 vertical boards). Right bay: a `shelves` module
 (4 horizontal boards). Both were added live through the editor.*
 
+## Cutlist export (`sheet2export`)
+
+`shared/domain/cutlist-export.ts` serializes the compiled cutlist to **CSV, JSON,
+HTML, and Markdown**, mirroring Woodworking's `sheet2export`. It's a pure,
+framework-free module (so it's unit-tested directly), driven by an Export toolbar
+in the cutlist view (`components/project/ProjectCutlist.vue`). Dimensions are
+emitted in **millimetres** — the practical cut-list unit and the app's underlying
+1 mm metric grid — even though the on-screen table shows metres. To add another
+format, extend `CutlistFormat` + `serializeCutlist` and the `CUTLIST_FORMATS` list.
+
 ## What's next (good follow-on ports)
 
 - **Drilling/dowels UI** — surface `PanelOperation` editing (`magicDriller`).
-- **Cutlist export formats** — CSV/JSON/HTML/Markdown to match `sheet2export`.
 - **Multi-unit display** — a presentation-layer unit toggle (mm/cm/in/board-ft).
