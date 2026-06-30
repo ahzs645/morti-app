@@ -207,6 +207,14 @@ function drawerCount(mod: FurnitureModule): number {
   return mod.drawerCount as number
 }
 
+function shelfCount(mod: FurnitureModule): number {
+  return Math.max(1, Math.min(16, Math.round((mod.shelfCount as number) || 1)))
+}
+
+function dividerCount(mod: FurnitureModule): number {
+  return Math.max(1, Math.min(16, Math.round((mod.dividerCount as number) || 1)))
+}
+
 function spacerStyle(axis: 'width' | 'height'): Record<string, string> {
   return axis === 'width' ? { width: `${We}px` } : { height: `${We}px` }
 }
@@ -499,6 +507,26 @@ function addButtonMarginTop(boundaryIndex: number): string {
                               class="absolute rounded-full"
                               :class="visualBgClass()"
                               :style="doorsPullStyle('right')"
+                            />
+                          </template>
+
+                          <template v-else-if="mod.type === 'shelves'">
+                            <div
+                              v-for="i in shelfCount(mod)"
+                              :key="`${mod.id}-shelf-${i}`"
+                              class="absolute left-0 right-0 bg-[var(--ui-bg-muted)]"
+                              :style="{ height: '2px', bottom: `${(i / (shelfCount(mod) + 1)) * 100}%` }"
+                              aria-hidden="true"
+                            />
+                          </template>
+
+                          <template v-else-if="mod.type === 'dividers'">
+                            <div
+                              v-for="i in dividerCount(mod)"
+                              :key="`${mod.id}-divider-${i}`"
+                              class="absolute top-0 bottom-0 bg-[var(--ui-bg-muted)]"
+                              :style="{ width: '2px', left: `${(i / (dividerCount(mod) + 1)) * 100}%` }"
+                              aria-hidden="true"
                             />
                           </template>
                         </button>

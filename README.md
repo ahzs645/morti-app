@@ -41,7 +41,17 @@ shared/yjs/         Yjs document initialization, migrations, and .morti import/e
 shared/idb/         IndexedDB adapter for local-first persistence
 public/             Icons, logos, and bundled hardware model assets
 scripts/            One-off operational scripts
+docs/               Project docs and assets
 ```
+
+## Extending the furniture model
+
+To add a new furniture component (module type or panel), see
+[`docs/woodworking-port.md`](docs/woodworking-port.md). It documents the
+parametric data model, how the assembly compiler turns modules into panels, and a
+step-by-step recipe for wiring a new component through types, the compiler,
+persistence, cutlist, 3D rendering, and the designer UI — using the built-in
+`shelves` component as a worked example.
 
 ## Requirements
 
