@@ -12,6 +12,12 @@ import {
   cutlistFileName,
   serializeCutlist,
 } from '~~/shared/domain/cutlist-export'
+import {
+  DEFAULT_LENGTH_UNIT,
+  LENGTH_UNITS,
+  type LengthUnit,
+} from '~~/shared/domain/units'
+import { formatLength } from '~~/shared/domain/units'
 import type { CompiledPanel, PanelOperation, PanelRole } from '~~/shared/domain/types'
 import { readFurnitureDoc } from '~~/shared/yjs/doc'
 
@@ -29,6 +35,8 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   (e: 'update:selectedDrawingKey', value: string | null): void
 }>()
+
+const unit = ref<LengthUnit>(DEFAULT_LENGTH_UNIT)
 
 const snapshot = ref(readFurnitureDoc(props.ydoc))
 
@@ -187,8 +195,7 @@ watch([panelRows, () => props.selectedDrawingKey], ([rows]) => {
 })
 
 function formatMetric(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return '—'
-  return value.toFixed(3).replace(/\.?0+$/, '')
+  return formatLength(value, unit.value)
 }
 
 function exportCutlist(format: CutlistFormat) {
@@ -219,6 +226,7 @@ function exportCutlist(format: CutlistFormat) {
       })),
     },
     format,
+    unit.value,
   )
   const blob = new Blob([content], { type: mime })
   const url = URL.createObjectURL(blob)
@@ -253,19 +261,38 @@ function stop() {}
         <h2 class="text-balance text-sm font-semibold text-highlighted">
           Panel cutlist
         </h2>
-        <div class="flex items-center gap-1.5">
-          <span class="text-[11px] text-muted">Export</span>
-          <button
-            v-for="fmt in CUTLIST_FORMATS"
-            :key="fmt.format"
-            type="button"
-            class="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-default shadow-sm transition-colors duration-150 hover:bg-elevated hover:text-highlighted active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
-            :disabled="panelRows.length === 0"
-            :aria-label="`Export cutlist as ${fmt.label}`"
-            @click="exportCutlist(fmt.format)"
-          >
-            {{ fmt.label }}
-          </button>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[11px] text-muted">Units</span>
+            <div class="inline-flex overflow-hidden rounded-md bg-muted shadow-sm">
+              <button
+                v-for="u in LENGTH_UNITS"
+                :key="u.unit"
+                type="button"
+                class="px-2 py-1 text-[11px] font-medium transition-colors duration-150 active:scale-[0.97]"
+                :class="unit === u.unit ? 'bg-primary text-inverted' : 'text-default hover:bg-elevated hover:text-highlighted'"
+                :aria-pressed="unit === u.unit"
+                :aria-label="`Show dimensions in ${u.label}`"
+                @click="unit = u.unit"
+              >
+                {{ u.label }}
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-[11px] text-muted">Export</span>
+            <button
+              v-for="fmt in CUTLIST_FORMATS"
+              :key="fmt.format"
+              type="button"
+              class="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-default shadow-sm transition-colors duration-150 hover:bg-elevated hover:text-highlighted active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="panelRows.length === 0"
+              :aria-label="`Export cutlist as ${fmt.label}`"
+              @click="exportCutlist(fmt.format)"
+            >
+              {{ fmt.label }}
+            </button>
+          </div>
         </div>
       </div>
       <div class="-mx-1 max-w-full overflow-x-auto px-1">
@@ -280,9 +307,9 @@ function stop() {}
             </th>
             <th class="border border-default px-2 py-1.5 font-medium">Role</th>
             <th class="border border-default px-2 py-1.5 font-medium"> Orientation </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Width</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Height </th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Thickness </th>
+            <th class="border border-default px-2 py-1.5 font-medium">Width ({{ unit }})</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> Height ({{ unit }}) </th>
+            <th class="border border-default px-2 py-1.5 font-medium"> Thickness ({{ unit }}) </th>
             <th class="border border-default px-2 py-1.5 font-medium">Qty</th>
           </tr>
         </thead>
@@ -345,10 +372,10 @@ function stop() {}
             <th class="border border-default px-2 py-1.5 font-medium"> Operation </th>
             <th class="border border-default px-2 py-1.5 font-medium"> Target panel </th>
             <th class="border border-default px-2 py-1.5 font-medium">Face</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Diameter </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Depth</th>
-            <th class="border border-default px-2 py-1.5 font-medium">Width</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Length </th>
+            <th class="border border-default px-2 py-1.5 font-medium"> Diameter ({{ unit }}) </th>
+            <th class="border border-default px-2 py-1.5 font-medium">Depth ({{ unit }})</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Width ({{ unit }})</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> Length ({{ unit }}) </th>
             <th class="border border-default px-2 py-1.5 font-medium"> Through </th>
             <th class="border border-default px-2 py-1.5 font-medium">Qty</th>
           </tr>

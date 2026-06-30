@@ -42,7 +42,7 @@ describe('cutlist export', () => {
   it('emits a Markdown table', () => {
     const { content } = serializeCutlist(sample, 'md')
     expect(content).toContain('# Cutlist — My "Shelf" Unit')
-    expect(content).toContain('| Part | Role | Orientation | Width | Height | Thickness | Qty |')
+    expect(content).toContain('| Part | Role | Orientation | Width (mm) | Height (mm) | Thickness (mm) | Qty |')
     expect(content).toContain('| S1 | vertical-side | vertical | 450 | 340 | 18 | 2 |')
   })
 
@@ -58,6 +58,17 @@ describe('cutlist export', () => {
     expect(cutlistFileName('My "Shelf" Unit', 'csv')).toBe('my-shelf-unit-cutlist.csv')
     expect(cutlistFileName('   ', 'json')).toBe('cutlist-cutlist.json')
     expect(cutlistFileName('Wardrobe', 'md')).toBe('wardrobe-cutlist.md')
+  })
+
+  it('honors a non-default unit in headers and values', () => {
+    const csv = serializeCutlist(sample, 'csv', 'in').content
+    expect(csv).toContain('Width (in)')
+    // 0.45 m -> 17.72 in, 0.018 m -> 0.71 in
+    expect(csv).toContain('S1,vertical-side,vertical,17.72,13.39,0.71,2')
+
+    const json = JSON.parse(serializeCutlist(sample, 'json', 'cm').content)
+    expect(json.units).toBe('cm')
+    expect(json.panels[0]).toMatchObject({ part: 'S1', width: 45, height: 34, thickness: 1.8 })
   })
 
   it('handles an empty cutlist without throwing', () => {

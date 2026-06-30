@@ -2,8 +2,11 @@
 // of FreeCAD Woodworking's `sheet2export` (CSV/JSON/HTML/Markdown). Pure and
 // framework-free so it can be unit-tested and reused outside the Vue component.
 //
-// Dimensions are emitted in **millimetres** (the practical cut-list unit, and the
-// app's underlying 1 mm metric grid), not the metres shown on screen.
+// Dimensions are stored in metres and emitted in the caller's chosen unit
+// (defaults to millimetres — the practical cut-list unit and the app's underlying
+// 1 mm metric grid).
+
+import { convertFromMeters, type LengthUnit } from './units'
 
 export interface CutlistPanelRow {
   groupId: string
@@ -49,14 +52,14 @@ export const CUTLIST_FORMATS: { format: CutlistFormat, label: string }[] = [
   { format: 'md', label: 'Markdown' },
 ]
 
-/** Metres → millimetres, rounded to the nearest mm. `null` → null. */
-function mm(value: number | null | undefined): number | null {
+/** Metres → chosen unit (rounded to that unit's precision). `null` → null. */
+function num(value: number | null | undefined, unit: LengthUnit): number | null {
   if (value == null || !Number.isFinite(value)) return null
-  return Math.round(value * 1000)
+  return convertFromMeters(value, unit)
 }
 
-function mmText(value: number | null | undefined): string {
-  const v = mm(value)
+function numText(value: number | null | undefined, unit: LengthUnit): string {
+  const v = num(value, unit)
   return v == null ? '' : String(v)
 }
 
@@ -83,18 +86,18 @@ function csvRow(cells: (string | number)[]): string {
   return cells.map(csvCell).join(',')
 }
 
-function toCsv(data: CutlistData): string {
+function toCsv(data: CutlistData, unit: LengthUnit): string {
   const lines: string[] = []
   lines.push('Panel cutlist')
-  lines.push(csvRow(['Part', 'Role', 'Orientation', 'Width (mm)', 'Height (mm)', 'Thickness (mm)', 'Qty']))
+  lines.push(csvRow(['Part', 'Role', 'Orientation', `Width (${unit})`, `Height (${unit})`, `Thickness (${unit})`, 'Qty']))
   for (const p of data.panels) {
-    lines.push(csvRow([p.groupId, p.role, p.orientation, mmText(p.width), mmText(p.height), mmText(p.thickness), p.quantity]))
+    lines.push(csvRow([p.groupId, p.role, p.orientation, numText(p.width, unit), numText(p.height, unit), numText(p.thickness, unit), p.quantity]))
   }
   lines.push('')
   lines.push('Machining operations')
-  lines.push(csvRow(['Operation', 'Target panel', 'Face', 'Diameter (mm)', 'Depth (mm)', 'Width (mm)', 'Length (mm)', 'Through', 'Qty']))
+  lines.push(csvRow(['Operation', 'Target panel', 'Face', `Diameter (${unit})`, `Depth (${unit})`, `Width (${unit})`, `Length (${unit})`, 'Through', 'Qty']))
   for (const o of data.operations) {
-    lines.push(csvRow([o.operationType, o.targetRole, o.face, mmText(o.diameter), mmText(o.depth), mmText(o.width), mmText(o.length), o.through ? 'yes' : 'no', o.quantity]))
+    lines.push(csvRow([o.operationType, o.targetRole, o.face, numText(o.diameter, unit), numText(o.depth, unit), numText(o.width, unit), numText(o.length, unit), o.through ? 'yes' : 'no', o.quantity]))
   }
   return lines.join('\r\n')
 }
@@ -103,28 +106,28 @@ function toCsv(data: CutlistData): string {
 // JSON
 // ---------------------------------------------------------------------------
 
-function toJson(data: CutlistData): string {
+function toJson(data: CutlistData, unit: LengthUnit): string {
   return JSON.stringify({
     projectName: data.projectName,
     exportedAt: data.exportedAt,
-    units: 'mm',
+    units: unit,
     panels: data.panels.map(p => ({
       part: p.groupId,
       role: p.role,
       orientation: p.orientation,
-      width: mm(p.width),
-      height: mm(p.height),
-      thickness: mm(p.thickness),
+      width: num(p.width, unit),
+      height: num(p.height, unit),
+      thickness: num(p.thickness, unit),
       quantity: p.quantity,
     })),
     operations: data.operations.map(o => ({
       operation: o.operationType,
       targetPanel: o.targetRole,
       face: o.face,
-      diameter: mm(o.diameter),
-      depth: mm(o.depth),
-      width: mm(o.width),
-      length: mm(o.length),
+      diameter: num(o.diameter, unit),
+      depth: num(o.depth, unit),
+      width: num(o.width, unit),
+      length: num(o.length, unit),
       through: o.through,
       quantity: o.quantity,
     })),
@@ -135,27 +138,27 @@ function toJson(data: CutlistData): string {
 // Markdown
 // ---------------------------------------------------------------------------
 
-function toMarkdown(data: CutlistData): string {
+function toMarkdown(data: CutlistData, unit: LengthUnit): string {
   const out: string[] = []
   out.push(`# Cutlist — ${data.projectName}`)
   out.push('')
-  out.push(`_Exported ${data.exportedAt} · dimensions in mm_`)
+  out.push(`_Exported ${data.exportedAt} · dimensions in ${unit}_`)
   out.push('')
   out.push('## Panels')
   out.push('')
-  out.push('| Part | Role | Orientation | Width | Height | Thickness | Qty |')
+  out.push(`| Part | Role | Orientation | Width (${unit}) | Height (${unit}) | Thickness (${unit}) | Qty |`)
   out.push('| --- | --- | --- | ---: | ---: | ---: | ---: |')
   for (const p of data.panels) {
-    out.push(`| ${p.groupId} | ${p.role} | ${p.orientation} | ${mmText(p.width)} | ${mmText(p.height)} | ${mmText(p.thickness)} | ${p.quantity} |`)
+    out.push(`| ${p.groupId} | ${p.role} | ${p.orientation} | ${numText(p.width, unit)} | ${numText(p.height, unit)} | ${numText(p.thickness, unit)} | ${p.quantity} |`)
   }
   if (data.panels.length === 0) out.push('| — | — | — | — | — | — | — |')
   out.push('')
   out.push('## Machining operations')
   out.push('')
-  out.push('| Operation | Target panel | Face | Diameter | Depth | Width | Length | Through | Qty |')
+  out.push(`| Operation | Target panel | Face | Diameter (${unit}) | Depth (${unit}) | Width (${unit}) | Length (${unit}) | Through | Qty |`)
   out.push('| --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: |')
   for (const o of data.operations) {
-    out.push(`| ${o.operationType} | ${o.targetRole} | ${o.face} | ${mmText(o.diameter)} | ${mmText(o.depth)} | ${mmText(o.width)} | ${mmText(o.length)} | ${o.through ? 'yes' : 'no'} | ${o.quantity} |`)
+    out.push(`| ${o.operationType} | ${o.targetRole} | ${o.face} | ${numText(o.diameter, unit)} | ${numText(o.depth, unit)} | ${numText(o.width, unit)} | ${numText(o.length, unit)} | ${o.through ? 'yes' : 'no'} | ${o.quantity} |`)
   }
   if (data.operations.length === 0) out.push('| — | — | — | — | — | — | — | — | — |')
   out.push('')
@@ -174,14 +177,14 @@ function escapeHtml(value: string | number): string {
     .replace(/"/g, '&quot;')
 }
 
-function toHtml(data: CutlistData): string {
+function toHtml(data: CutlistData, unit: LengthUnit): string {
   const panelRows = data.panels.map(p =>
     `<tr><td>${escapeHtml(p.groupId)}</td><td>${escapeHtml(p.role)}</td><td>${escapeHtml(p.orientation)}</td>`
-    + `<td class="n">${mmText(p.width)}</td><td class="n">${mmText(p.height)}</td><td class="n">${mmText(p.thickness)}</td><td class="n">${p.quantity}</td></tr>`,
+    + `<td class="n">${numText(p.width, unit)}</td><td class="n">${numText(p.height, unit)}</td><td class="n">${numText(p.thickness, unit)}</td><td class="n">${p.quantity}</td></tr>`,
   ).join('\n')
   const opRows = data.operations.map(o =>
     `<tr><td>${escapeHtml(o.operationType)}</td><td>${escapeHtml(o.targetRole)}</td><td>${escapeHtml(o.face)}</td>`
-    + `<td class="n">${mmText(o.diameter)}</td><td class="n">${mmText(o.depth)}</td><td class="n">${mmText(o.width)}</td><td class="n">${mmText(o.length)}</td>`
+    + `<td class="n">${numText(o.diameter, unit)}</td><td class="n">${numText(o.depth, unit)}</td><td class="n">${numText(o.width, unit)}</td><td class="n">${numText(o.length, unit)}</td>`
     + `<td>${o.through ? 'yes' : 'no'}</td><td class="n">${o.quantity}</td></tr>`,
   ).join('\n')
 
@@ -202,17 +205,17 @@ function toHtml(data: CutlistData): string {
 </head>
 <body>
 <h1>Cutlist — ${escapeHtml(data.projectName)}</h1>
-<p class="meta">Exported ${escapeHtml(data.exportedAt)} · dimensions in mm</p>
+<p class="meta">Exported ${escapeHtml(data.exportedAt)} · dimensions in ${unit}</p>
 <h2>Panels</h2>
 <table>
-<thead><tr><th>Part</th><th>Role</th><th>Orientation</th><th>Width</th><th>Height</th><th>Thickness</th><th>Qty</th></tr></thead>
+<thead><tr><th>Part</th><th>Role</th><th>Orientation</th><th>Width (${unit})</th><th>Height (${unit})</th><th>Thickness (${unit})</th><th>Qty</th></tr></thead>
 <tbody>
 ${panelRows || '<tr><td colspan="7">No panels</td></tr>'}
 </tbody>
 </table>
 <h2>Machining operations</h2>
 <table>
-<thead><tr><th>Operation</th><th>Target panel</th><th>Face</th><th>Diameter</th><th>Depth</th><th>Width</th><th>Length</th><th>Through</th><th>Qty</th></tr></thead>
+<thead><tr><th>Operation</th><th>Target panel</th><th>Face</th><th>Diameter (${unit})</th><th>Depth (${unit})</th><th>Width (${unit})</th><th>Length (${unit})</th><th>Through</th><th>Qty</th></tr></thead>
 <tbody>
 ${opRows || '<tr><td colspan="9">No machining operations</td></tr>'}
 </tbody>
@@ -222,15 +225,15 @@ ${opRows || '<tr><td colspan="9">No machining operations</td></tr>'}
 `
 }
 
-export function serializeCutlist(data: CutlistData, format: CutlistFormat): SerializedCutlist {
+export function serializeCutlist(data: CutlistData, format: CutlistFormat, unit: LengthUnit = 'mm'): SerializedCutlist {
   switch (format) {
     case 'csv':
-      return { content: toCsv(data), mime: 'text/csv;charset=utf-8', ext: 'csv' }
+      return { content: toCsv(data, unit), mime: 'text/csv;charset=utf-8', ext: 'csv' }
     case 'json':
-      return { content: toJson(data), mime: 'application/json', ext: 'json' }
+      return { content: toJson(data, unit), mime: 'application/json', ext: 'json' }
     case 'html':
-      return { content: toHtml(data), mime: 'text/html;charset=utf-8', ext: 'html' }
+      return { content: toHtml(data, unit), mime: 'text/html;charset=utf-8', ext: 'html' }
     case 'md':
-      return { content: toMarkdown(data), mime: 'text/markdown;charset=utf-8', ext: 'md' }
+      return { content: toMarkdown(data, unit), mime: 'text/markdown;charset=utf-8', ext: 'md' }
   }
 }

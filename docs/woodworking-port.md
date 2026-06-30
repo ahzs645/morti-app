@@ -33,7 +33,7 @@ cutlist, and `.morti` export "for free".
 | `sheet2export` (CSV/JSON/HTML/MD) | Cutlist export (`shared/domain/cutlist-export.ts`) | Added |
 | `magicColors` / materials | `PublicStyle` materials + style panel | Exists |
 | `magicDowels` / `magicDriller` | `PanelOperation` (`through-hole`, `rail-cut`) | Partial — UI to add |
-| Multi-unit (mm/cm/in/board-ft) | metric-only today | To add |
+| Multi-unit (mm/cm/m/in) | Cutlist unit toggle (`shared/domain/units.ts`) | Added |
 
 The model below is what makes each new row tractable.
 
@@ -203,7 +203,18 @@ emitted in **millimetres** — the practical cut-list unit and the app's underly
 1 mm metric grid — even though the on-screen table shows metres. To add another
 format, extend `CutlistFormat` + `serializeCutlist` and the `CUTLIST_FORMATS` list.
 
+## Units (multi-unit display)
+
+`shared/domain/units.ts` is a pure presentation layer over the metre-based domain:
+`convertFromMeters` / `formatLength` render any stored value in **mm, cm, m, or
+inches** at a sensible per-unit precision. The cutlist view has a unit toggle that
+drives both the on-screen table and the export (the chosen unit flows into
+`serializeCutlist`). It defaults to **mm** — the practical cut-list unit. Adding a
+unit (e.g. board-feet, fractional inches) means extending `LengthUnit`,
+`METERS_PER_UNIT`, and `UNIT_DECIMALS`.
+
 ## What's next (good follow-on ports)
 
 - **Drilling/dowels UI** — surface `PanelOperation` editing (`magicDriller`).
-- **Multi-unit display** — a presentation-layer unit toggle (mm/cm/in/board-ft).
+- **Fractional inches / board-feet** — extend the unit module's formatting.
+- **Persist the unit choice** — currently per-session; could live in editor state.
