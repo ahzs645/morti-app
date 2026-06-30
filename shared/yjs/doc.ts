@@ -12,6 +12,9 @@ import {
   DEFAULT_SHELF_COUNT,
   SHELF_COUNT_MAX,
   SHELF_COUNT_MIN,
+  DEFAULT_DIVIDER_COUNT,
+  DIVIDER_COUNT_MAX,
+  DIVIDER_COUNT_MIN,
   FURNITURE_CONFIG_WRITABLE_KEYS,
 } from '~~/shared/domain/defaults'
 import {
@@ -105,7 +108,7 @@ export function ensureInitialized(doc: Y.Doc) {
         }
         const rawType = module.get('type')
         const type = rawType === 'drawers' ? 'drawer' : rawType
-        if (type !== 'shelf' && type !== 'shelves' && type !== 'drawer' && type !== 'doors' && type !== 'left-door' && type !== 'right-door') {
+        if (type !== 'shelf' && type !== 'shelves' && type !== 'dividers' && type !== 'drawer' && type !== 'doors' && type !== 'left-door' && type !== 'right-door') {
           module.set('type', 'shelf')
         }
         else if (type !== rawType) {
@@ -138,6 +141,18 @@ export function ensureInitialized(doc: Y.Doc) {
         }
         else if (module.has('shelfCount')) {
           module.delete('shelfCount')
+        }
+        if (module.get('type') === 'dividers') {
+          const dividerCount = module.get('dividerCount')
+          if (typeof dividerCount !== 'number' || !Number.isFinite(dividerCount)) {
+            module.set('dividerCount', DEFAULT_DIVIDER_COUNT)
+          }
+          else {
+            module.set('dividerCount', Math.max(DIVIDER_COUNT_MIN, Math.min(DIVIDER_COUNT_MAX, Math.round(dividerCount))))
+          }
+        }
+        else if (module.has('dividerCount')) {
+          module.delete('dividerCount')
         }
       })
     })
@@ -177,17 +192,21 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     ms?.forEach((mm) => {
       const id = (mm.get('id') as string) ?? cryptoRandomId()
       const rawType = mm.get('type')
-      const type: ModuleType = rawType === 'drawer' || rawType === 'doors' || rawType === 'left-door' || rawType === 'right-door' || rawType === 'shelf' || rawType === 'shelves' ? rawType : 'shelf'
+      const type: ModuleType = rawType === 'drawer' || rawType === 'doors' || rawType === 'left-door' || rawType === 'right-door' || rawType === 'shelf' || rawType === 'shelves' || rawType === 'dividers' ? rawType : 'shelf'
       const rawHeight = mm.get('height')
       const height = typeof rawHeight === 'number' && Number.isFinite(rawHeight) && rawHeight > 0 ? snapMetric(rawHeight) : DEFAULT_SHELF_HEIGHT
       const drawerCount = mm.get('drawerCount') as number | undefined
       const shelfCount = mm.get('shelfCount') as number | undefined
+      const dividerCount = mm.get('dividerCount') as number | undefined
       const m: FurnitureModule = { id, type, height }
       if (type === 'drawer' && typeof drawerCount === 'number' && Number.isFinite(drawerCount)) {
         m.drawerCount = Math.max(DRAWER_COUNT_MIN, Math.min(DRAWER_COUNT_MAX, Math.round(drawerCount)))
       }
       if (type === 'shelves' && typeof shelfCount === 'number' && Number.isFinite(shelfCount)) {
         m.shelfCount = Math.max(SHELF_COUNT_MIN, Math.min(SHELF_COUNT_MAX, Math.round(shelfCount)))
+      }
+      if (type === 'dividers' && typeof dividerCount === 'number' && Number.isFinite(dividerCount)) {
+        m.dividerCount = Math.max(DIVIDER_COUNT_MIN, Math.min(DIVIDER_COUNT_MAX, Math.round(dividerCount)))
       }
       modules.push(m)
     })
@@ -209,6 +228,7 @@ export function toYModule(m: FurnitureModule): Y.Map<unknown> {
   y.set('height', m.height)
   if (typeof m.drawerCount === 'number') y.set('drawerCount', m.drawerCount)
   if (typeof m.shelfCount === 'number') y.set('shelfCount', m.shelfCount)
+  if (typeof m.dividerCount === 'number') y.set('dividerCount', m.dividerCount)
   return y
 }
 
@@ -252,6 +272,7 @@ export function insertModule(doc: Y.Doc, columnIndex: number, atIndex: number, t
     const m: FurnitureModule = { id: cryptoRandomId(), type, height: DEFAULT_SHELF_HEIGHT }
     if (type === 'drawer') m.drawerCount = DEFAULT_DRAWER_COUNT
     if (type === 'shelves') m.shelfCount = DEFAULT_SHELF_COUNT
+    if (type === 'dividers') m.dividerCount = DEFAULT_DIVIDER_COUNT
     ms.insert(atIndex, [toYModule(m)])
   }, 'insertModule')
 }
@@ -273,6 +294,8 @@ export function setModuleType(doc: Y.Doc, columnIndex: number, moduleIndex: numb
     if (type !== 'drawer' && m.has('drawerCount')) m.delete('drawerCount')
     if (type === 'shelves' && !m.has('shelfCount')) m.set('shelfCount', DEFAULT_SHELF_COUNT)
     if (type !== 'shelves' && m.has('shelfCount')) m.delete('shelfCount')
+    if (type === 'dividers' && !m.has('dividerCount')) m.set('dividerCount', DEFAULT_DIVIDER_COUNT)
+    if (type !== 'dividers' && m.has('dividerCount')) m.delete('dividerCount')
   }, 'setModuleType')
 }
 
@@ -299,6 +322,15 @@ export function setShelfCount(doc: Y.Doc, columnIndex: number, moduleIndex: numb
     if (!m) return
     m.set('shelfCount', Math.max(SHELF_COUNT_MIN, Math.min(SHELF_COUNT_MAX, Math.round(shelfCount))))
   }, 'setShelfCount')
+}
+
+export function setDividerCount(doc: Y.Doc, columnIndex: number, moduleIndex: number, dividerCount: number) {
+  doc.transact(() => {
+    const ms = (getFurnitureMap(doc).get('columns') as Y.Array<Y.Map<unknown>>).get(columnIndex)?.get('modules') as Y.Array<Y.Map<unknown>>
+    const m = ms.get(moduleIndex)
+    if (!m) return
+    m.set('dividerCount', Math.max(DIVIDER_COUNT_MIN, Math.min(DIVIDER_COUNT_MAX, Math.round(dividerCount))))
+  }, 'setDividerCount')
 }
 
 export function setConfigValue<K extends keyof FurnitureConfig>(doc: Y.Doc, key: K, value: FurnitureConfig[K]) {

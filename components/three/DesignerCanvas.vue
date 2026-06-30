@@ -551,7 +551,7 @@ const gridColor = computed(() => {
 })
 
 function partForPanel(panel: CompiledPanel): CabinetPart {
-  if (panel.role === 'vertical-side') return 'sides'
+  if (panel.role === 'vertical-side' || panel.role === 'vertical-divider') return 'sides'
   if (panel.role === 'horizontal-deck' || panel.role === 'internal-shelf') return 'deck'
   if (panel.role === 'door-front' || panel.role === 'drawer-front') return 'fronts'
   return 'carcass'

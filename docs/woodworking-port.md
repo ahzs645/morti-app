@@ -27,7 +27,8 @@ cutlist, and `.morti` export "for free".
 | --- | --- | --- |
 | `magicStart` (furniture skeleton) | `columns → modules` model + designer | Exists |
 | Panel furniture parts (sides, shelves, backs) | `PanelRole`s emitted by the compiler | Exists + extended |
-| Internal shelves inside a bay | **`shelves` module** (this change) | Added |
+| Internal shelves inside a bay | **`shelves` module** | Added |
+| Vertical dividers / mullions in a bay | **`dividers` module** | Added |
 | `getDimensions` (cut list) | Cutlist view (`shared/domain/cutlist.ts`) | Exists |
 | `sheet2export` (CSV/JSON/HTML/MD) | Cutlist export | Partial — formats to add |
 | `magicColors` / materials | `PublicStyle` materials + style panel | Exists |
@@ -171,9 +172,29 @@ For headless screenshots in CI/dev containers, Chromium is preinstalled; launch
 Playwright with `--use-gl=angle --use-angle=swiftshader` so the Three.js canvas
 renders without a GPU.
 
+## Second worked example: the `dividers` component
+
+`dividers` is the vertical counterpart to `shelves` — N evenly-spaced **vertical**
+boards (`vertical-divider` role) that split a bay into side-by-side sub-bays. It was
+built by following the recipe above verbatim, which is the point: the same nine
+edits, swapping "horizontal board across the height" for "vertical board across the
+width". Concretely it differs from `shelves` only in:
+
+- the panel `orientation` is `vertical-yz` (not `horizontal-xz`), and boards are
+  spaced across the cell **width** (`xMin..xMax`) instead of its height;
+- `partForPanel` maps `vertical-divider` to the `sides` material (not `deck`);
+- the 2D front-view branch draws vertical lines instead of horizontal ones.
+
+If you're adding a component, copy whichever of the two (`shelves` /  `dividers`)
+is closer to your part and adjust those three axis-specific spots.
+
+![Vertical dividers next to internal shelves](assets/woodworking/dividers-and-shelves.png)
+
+*Left bay: a `dividers` module (3 vertical boards). Right bay: a `shelves` module
+(4 horizontal boards). Both were added live through the editor.*
+
 ## What's next (good follow-on ports)
 
-- **Dividers / vertical mullions** — same recipe, a `vertical-mullion` role.
 - **Drilling/dowels UI** — surface `PanelOperation` editing (`magicDriller`).
 - **Cutlist export formats** — CSV/JSON/HTML/Markdown to match `sheet2export`.
 - **Multi-unit display** — a presentation-layer unit toggle (mm/cm/in/board-ft).

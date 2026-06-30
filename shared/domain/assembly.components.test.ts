@@ -11,7 +11,7 @@ vi.mock('three-bvh-csg', () => ({
 
 import { compileAssembly } from './assembly'
 import { panelRoleCode } from './cutlist'
-import { DEFAULT_FURNITURE_CONFIG, DEFAULT_SHELF_COUNT, defaultModule } from './defaults'
+import { DEFAULT_DIVIDER_COUNT, DEFAULT_FURNITURE_CONFIG, DEFAULT_SHELF_COUNT, defaultModule } from './defaults'
 import type { FurnitureDoc, ModuleType } from './types'
 import { DESIGN_SCHEMA_VERSION } from './types'
 
@@ -28,6 +28,9 @@ function docWithSingleModule(type: ModuleType, extra: Record<string, unknown> = 
 
 const internalShelves = (doc: FurnitureDoc) =>
   compileAssembly(doc).panels.filter(p => p.role === 'internal-shelf')
+
+const verticalDividers = (doc: FurnitureDoc) =>
+  compileAssembly(doc).panels.filter(p => p.role === 'vertical-divider')
 
 describe('shelves component compiler', () => {
   it('emits one internal-shelf panel per shelfCount', () => {
@@ -74,5 +77,41 @@ describe('shelves component compiler', () => {
   it('seeds shelfCount in defaultModule for shelves only', () => {
     expect(defaultModule('shelves').shelfCount).toBe(DEFAULT_SHELF_COUNT)
     expect(defaultModule('shelf').shelfCount).toBeUndefined()
+  })
+})
+
+describe('dividers component compiler', () => {
+  it('emits one vertical-divider panel per dividerCount', () => {
+    for (const count of [1, 2, 4, 8]) {
+      const panels = verticalDividers(docWithSingleModule('dividers', { dividerCount: count }))
+      expect(panels).toHaveLength(count)
+    }
+  })
+
+  it('lays dividers out as vertical boards at distinct x positions', () => {
+    const panels = verticalDividers(docWithSingleModule('dividers', { dividerCount: 3 }))
+    for (const p of panels) {
+      expect(p.orientation).toBe('vertical-yz')
+      expect(p.sourceModuleId).toBe('m1')
+      expect(p.width).toBeGreaterThan(0)
+      expect(p.height).toBeGreaterThan(0)
+    }
+    const xs = panels.map(p => p.position[0]).sort((a, b) => a - b)
+    expect(new Set(xs).size).toBe(3)
+  })
+
+  it('floors a missing dividerCount to one board; other types emit none', () => {
+    expect(verticalDividers(docWithSingleModule('dividers'))).toHaveLength(1)
+    expect(verticalDividers(docWithSingleModule('shelf'))).toHaveLength(0)
+    expect(verticalDividers(docWithSingleModule('shelves', { shelfCount: 4 }))).toHaveLength(0)
+  })
+
+  it('gives the vertical-divider role a stable cutlist code', () => {
+    expect(panelRoleCode('vertical-divider')).toBe('V')
+  })
+
+  it('seeds dividerCount in defaultModule for dividers only', () => {
+    expect(defaultModule('dividers').dividerCount).toBe(DEFAULT_DIVIDER_COUNT)
+    expect(defaultModule('shelf').dividerCount).toBeUndefined()
   })
 })

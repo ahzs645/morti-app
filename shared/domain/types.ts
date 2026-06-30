@@ -1,4 +1,4 @@
-export type ModuleType = 'shelf' | 'shelves' | 'drawer' | 'doors' | 'left-door' | 'right-door'
+export type ModuleType = 'shelf' | 'shelves' | 'dividers' | 'drawer' | 'doors' | 'left-door' | 'right-door'
 
 export interface FurnitureModule {
   id: string
@@ -6,6 +6,7 @@ export interface FurnitureModule {
   height: number // metres
   drawerCount?: number // 1..32, drawer only
   shelfCount?: number // 1..16, internal shelf boards, 'shelves' only
+  dividerCount?: number // 1..16, vertical divider boards, 'dividers' only
 }
 
 export interface FurnitureColumn {
@@ -149,6 +150,7 @@ export type PanelRole =
   | 'vertical-side'
   | 'horizontal-deck'
   | 'internal-shelf'
+  | 'vertical-divider'
   | 'back-panel'
   | 'door-front'
   | 'drawer-front'
@@ -239,6 +241,7 @@ export const PANEL_ROLE_SHORT_CODE: Record<PanelRole, string> = {
   'vertical-side': 'S',
   'horizontal-deck': 'D',
   'internal-shelf': 'IS',
+  'vertical-divider': 'VD',
   'back-panel': 'B',
   'door-front': 'DF',
   'drawer-front': 'DRF',

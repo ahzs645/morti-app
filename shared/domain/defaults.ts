@@ -46,7 +46,7 @@ export const FURNITURE_CONFIG_WRITABLE_KEYS: (keyof FurnitureConfig)[] = [
   'maxDrawerHeight',
 ]
 
-export const MODULE_TYPES: ModuleType[] = ['shelf', 'shelves', 'drawer', 'doors', 'left-door', 'right-door']
+export const MODULE_TYPES: ModuleType[] = ['shelf', 'shelves', 'dividers', 'drawer', 'doors', 'left-door', 'right-door']
 
 export const DEFAULT_COLUMN_WIDTH = 0.45
 export const DEFAULT_SHELF_HEIGHT = 0.3
@@ -56,6 +56,9 @@ export const DRAWER_COUNT_MAX = 32
 export const DEFAULT_SHELF_COUNT = 2
 export const SHELF_COUNT_MIN = 1
 export const SHELF_COUNT_MAX = 16
+export const DEFAULT_DIVIDER_COUNT = 1
+export const DIVIDER_COUNT_MIN = 1
+export const DIVIDER_COUNT_MAX = 16
 
 export function snapConfig(c: Partial<FurnitureConfig>): FurnitureConfig {
   const r = { ...DEFAULT_FURNITURE_CONFIG, ...c }
@@ -70,6 +73,7 @@ export function defaultModule(type: ModuleType): FurnitureModule {
   const m: FurnitureModule = { id: cryptoRandomId(), type, height: DEFAULT_SHELF_HEIGHT }
   if (type === 'drawer') m.drawerCount = DEFAULT_DRAWER_COUNT
   if (type === 'shelves') m.shelfCount = DEFAULT_SHELF_COUNT
+  if (type === 'dividers') m.dividerCount = DEFAULT_DIVIDER_COUNT
   return m
 }
 

@@ -28,11 +28,12 @@ export const AI_FURNITURE_PROMPT_MAX_LENGTH = 1_200
 export const AI_FURNITURE_MAX_COLUMNS = 8
 export const AI_FURNITURE_MAX_MODULES_PER_COLUMN = 12
 
-const MODULE_TYPES: ModuleType[] = ['shelf', 'shelves', 'drawer', 'doors', 'left-door', 'right-door']
-const COMPACT_MODULE_TYPES = ['s', 'h', 'd', 'D', 'l', 'r'] as const
+const MODULE_TYPES: ModuleType[] = ['shelf', 'shelves', 'dividers', 'drawer', 'doors', 'left-door', 'right-door']
+const COMPACT_MODULE_TYPES = ['s', 'h', 'v', 'd', 'D', 'l', 'r'] as const
 const COMPACT_TO_MODULE_TYPE: Record<string, ModuleType> = {
   s: 'shelf',
   h: 'shelves',
+  v: 'dividers',
   d: 'drawer',
   D: 'doors',
   l: 'left-door',
@@ -276,6 +277,12 @@ function normalizeModule(raw: unknown, config: FurnitureConfig, warnings: string
     module.shelfCount = Math.max(1, Math.min(16, shelfCount))
   }
 
+  if (type === 'dividers') {
+    const rawDividerCount = finiteNumber(source.dividerCount ?? (source as { n?: unknown }).n)
+    const dividerCount = rawDividerCount == null ? 1 : Math.round(rawDividerCount)
+    module.dividerCount = Math.max(1, Math.min(16, dividerCount))
+  }
+
   return module
 }
 
@@ -286,6 +293,7 @@ function normalizeCompactModule(raw: unknown, config: FurnitureConfig, warnings:
       height: raw[1],
       drawerCount: raw[2],
       shelfCount: raw[2],
+      dividerCount: raw[2],
     }, config, warnings)
   }
   const source = isRecord(raw) ? raw : {}
@@ -294,6 +302,7 @@ function normalizeCompactModule(raw: unknown, config: FurnitureConfig, warnings:
     height: source.h ?? source.height,
     drawerCount: source.n ?? source.drawerCount,
     shelfCount: source.n ?? source.shelfCount,
+    dividerCount: source.n ?? source.dividerCount,
   }, config, warnings)
 }
 
