@@ -1,5 +1,5 @@
 import type { AuthUser } from '~~/shared/domain/types'
-import { isLocalAuthBypassUser } from '~~/shared/domain/auth'
+import { createLocalAuthBypassUser, isLocalAuthBypassUser } from '~~/shared/domain/auth'
 
 const CACHED_USER_KEY = 'morti-auth-user'
 
@@ -34,7 +34,11 @@ function isEmailVerified(user: AuthUser | null): boolean {
 }
 
 export function useAuth() {
-  const user = useState<AuthUser | null>('auth-user', () => loadCachedUser())
+  // Static builds have no auth backend: everyone is the local bypass user,
+  // which unlocks the local-first editor while keeping cloud features off.
+  const isStaticSite = useRuntimeConfig().public.staticSite === true
+  const user = useState<AuthUser | null>('auth-user', () =>
+    isStaticSite ? createLocalAuthBypassUser() : loadCachedUser())
   const loading = useState<boolean>('auth-loading', () => false)
   const refreshStarted = useState<boolean>('auth-refresh-started', () => false)
 
@@ -44,6 +48,10 @@ export function useAuth() {
   const isCloudAuthed = computed(() => isAuthed.value && isVerified.value && !isLocalBypass.value)
 
   async function refreshUser(): Promise<AuthUser | null> {
+    if (isStaticSite) {
+      user.value = createLocalAuthBypassUser()
+      return user.value
+    }
     loading.value = true
     try {
       const res = await $fetch<{ user: AuthUser | null }>('/api/auth/me')
@@ -61,7 +69,7 @@ export function useAuth() {
     }
   }
 
-  if (import.meta.client && !refreshStarted.value) {
+  if (import.meta.client && !refreshStarted.value && !isStaticSite) {
     refreshStarted.value = true
     void refreshUser()
   }

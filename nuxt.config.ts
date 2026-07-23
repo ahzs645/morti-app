@@ -2,6 +2,12 @@
 const analyticsScriptSrc = process.env.NUXT_PUBLIC_ANALYTICS_SCRIPT_SRC?.trim() || ''
 const analyticsSiteId = process.env.NUXT_PUBLIC_ANALYTICS_SITE_ID?.trim() || ''
 
+// Static-site mode: no backend (auth, cloud sync, demos) — used for GitHub Pages.
+const staticSite = process.env.NUXT_PUBLIC_STATIC_SITE === 'true'
+// Head assets need the base URL baked in when deploying under a sub-path.
+const appBaseURL = process.env.NUXT_APP_BASE_URL || '/'
+const withAppBase = (path: string) => appBaseURL.replace(/\/+$/, '') + path
+
 export default defineNuxtConfig({
   future: { compatibilityVersion: 4 },
   srcDir: '.',
@@ -35,9 +41,9 @@ export default defineNuxtConfig({
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       ],
       link: [
-        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
-        { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
-        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+        { rel: 'icon', type: 'image/svg+xml', href: withAppBase('/favicon.svg') },
+        { rel: 'icon', type: 'image/png', sizes: '32x32', href: withAppBase('/favicon-32x32.png') },
+        { rel: 'apple-touch-icon', sizes: '180x180', href: withAppBase('/apple-touch-icon.png') },
       ],
       script: analyticsScriptSrc
         ? [{ src: analyticsScriptSrc, defer: true, ...(analyticsSiteId ? { 'data-site': analyticsSiteId } : {}) }]
@@ -54,8 +60,11 @@ export default defineNuxtConfig({
 
   icon: {
     mode: 'css',
-    provider: 'server',
+    // The server provider needs a Nitro endpoint, which doesn't exist on a
+    // static host — bundle scanned icons and fall back to the Iconify CDN.
+    provider: staticSite ? 'iconify' : 'server',
     cssLayer: 'base',
+    ...(staticSite ? { clientBundle: { scan: true, sizeLimitKb: 512 } } : {}),
   },
 
   fonts: {
@@ -85,6 +94,7 @@ export default defineNuxtConfig({
     aiFurnitureAllowLocalUnauth: process.env.AI_FURNITURE_ALLOW_LOCAL_UNAUTH === 'true',
     localAuthBypass: process.env.LOCAL_AUTH_BYPASS === 'true',
     public: {
+      staticSite,
       appBaseUrl: process.env.NUXT_PUBLIC_APP_BASE_URL || process.env.APP_BASE_URL || '',
       posthogKey: process.env.NUXT_PUBLIC_POSTHOG_KEY || '',
       posthogHost: process.env.NUXT_PUBLIC_POSTHOG_HOST || '',
