@@ -187,6 +187,27 @@ location / {
 }
 ```
 
+## GitHub Pages Deployment (static, no backend)
+
+The workflow in `.github/workflows/deploy-pages.yml` builds a fully static
+version of the app and deploys it to GitHub Pages on every push to `main`
+(or manually via the Actions tab). One-time setup: in the repository settings,
+under **Settings → Pages**, set **Source** to **GitHub Actions**.
+
+The static build sets `NUXT_PUBLIC_STATIC_SITE=true`, which:
+
+- requires no login — everyone gets the local bypass user, and projects are
+  stored on-device in the browser (IndexedDB), exactly like the local-first flow
+- hides all cloud features (sync, publishing, demos) since there is no server
+- leaves PostHog disabled (`NUXT_PUBLIC_POSTHOG_KEY` is simply not set)
+
+To build the same thing locally:
+
+```bash
+NUXT_PUBLIC_STATIC_SITE=true npx nuxt build --preset github_pages
+npx serve .output/public
+```
+
 ## DigitalOcean Deployment
 
 Referral link: https://m.do.co/c/228d4bc321e8

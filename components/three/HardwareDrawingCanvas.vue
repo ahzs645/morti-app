@@ -5,6 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 
 import { useThemeColors, getThemeColor } from '~~/composables/useThemeColors'
 import { useThreejsCanvas } from '~~/composables/useThreejsCanvas'
+import { usePublicAsset } from '~~/composables/usePublicAsset'
 import type { HardwareSpec } from '~~/shared/domain/types'
 
 interface Props {
@@ -16,6 +17,7 @@ const props = defineProps<Props>()
 const wrapperRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const { colors } = useThemeColors()
+const publicAsset = usePublicAsset()
 let requestCanvasRender: (() => void) | null = null
 
 const scene = new THREE.Scene()
@@ -92,7 +94,7 @@ async function loadModel() {
   requestCanvasRender?.()
   if (!props.spec?.modelGlbSrc) return
   try {
-    const gltf = await loader.loadAsync(props.spec.modelGlbSrc)
+    const gltf = await loader.loadAsync(publicAsset(props.spec.modelGlbSrc))
     flattenMaterials(gltf.scene)
     modelGroup.add(gltf.scene)
     frameCamera(gltf.scene)

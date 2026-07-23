@@ -9,6 +9,8 @@ interface PreviewData {
 const { user, isAuthed, isCloudAuthed, isLocalBypass, signOut } = useAuth()
 const local = useLocalProjects()
 const cloud = useCloudProjects()
+const publicAsset = usePublicAsset()
+const isStaticSite = useRuntimeConfig().public.staticSite === true
 
 const AppConfirmDialog = defineAsyncComponent(() => import('~/components/app/AppConfirmDialog.vue'))
 const AppFormDialog = defineAsyncComponent(() => import('~/components/app/AppFormDialog.vue'))
@@ -87,6 +89,7 @@ async function decodeSnapshotBytes(bytes: Uint8Array): Promise<PreviewData> {
 }
 
 async function loadCloudRecordForLocal(row: LocalProjectRow): Promise<CloudProjectRecord | null> {
+  if (isStaticSite) return null
   try {
     return await cloud.findCloudProjectByClientId(row.id)
   }
@@ -283,7 +286,7 @@ function isDemo(projectId: string): boolean {
   <UContainer class="pb-10 pt-20 sm:pb-14 sm:pt-16">
     <div class="pointer-events-none absolute left-3 top-3 z-30 sm:left-4 sm:top-4">
       <img
-        src="/morti_logo.svg"
+        :src="publicAsset('/morti_logo.svg')"
         alt="Morti"
         width="44"
         height="28"
@@ -335,6 +338,7 @@ function isDemo(projectId: string): boolean {
                 Projects
               </button>
               <button
+                v-if="!isStaticSite"
                 type="button"
                 :class="[
                   'morti-tab text-balance text-left text-2xl tracking-[-0.015em] transition-[color,transform] duration-200 active:scale-[0.97] sm:text-3xl',

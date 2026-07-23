@@ -21,6 +21,7 @@ const styleTabFlag = computed<boolean>(
 )
 
 const { user, isCloudAuthed, isVerified } = useAuth()
+const publicAsset = usePublicAsset()
 const {
   getLocalProject,
   renameLocalProject,
@@ -654,7 +655,7 @@ const canvasChromeTeleportSelector = computed(() =>
         @keydown.space.prevent="confirmCutlistWipAlert"
       >
         <img
-          src="/alert.svg"
+          :src="publicAsset('/alert.svg')"
           alt=""
           class="pointer-events-none h-full min-h-0 w-auto max-w-none select-none object-contain drop-shadow-2xl"
           draggable="false"
@@ -671,7 +672,7 @@ const canvasChromeTeleportSelector = computed(() =>
         @click="showCutlistWipAlert"
       >
         <img
-          src="/alert-sm.svg"
+          :src="publicAsset('/alert-sm.svg')"
           alt=""
           class="size-full select-none"
           draggable="false"
