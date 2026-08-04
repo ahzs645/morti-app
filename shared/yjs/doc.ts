@@ -52,6 +52,23 @@ import {
   sanitizeRouterProfile,
 } from '~~/shared/domain/router-profiles'
 import {
+  type FreePanel,
+  type PanelPlane,
+  type Vec3,
+  type WorldAxis,
+  MAX_FREE_PANELS,
+  centeredOn,
+  copiedToPlane,
+  equallySpaced,
+  makeFreePanel,
+  movedBy,
+  movedByThickness,
+  panelBetween,
+  panelFromFace,
+  resizedOnAxis,
+  sanitizeFreePanels,
+} from '~~/shared/domain/free-panels'
+import {
   DESIGN_SCHEMA_VERSION,
   PROJECT_SETTINGS_KEYS,
   type FurnitureColumn,
@@ -80,6 +97,15 @@ export const MIGRATIONS: { id: string, run(map: Y.Map<unknown>): void }[] = [
         }
       }
       cfg.delete('drawerInnerInset')
+    },
+  },
+  {
+    // Schema 3 → 4 introduced the free-panel layer. Nothing to rewrite: an
+    // absent `freePanels` array reads as empty, so every pre-4 document keeps
+    // compiling to exactly the panels it did before.
+    id: '1740000002000_free_panel_layer',
+    run(map) {
+      if (!map.has('freePanels')) map.set('freePanels', new Y.Array<unknown>())
     },
   },
 ]
@@ -213,6 +239,25 @@ function writeRouterProfile(target: Y.Map<unknown>, role: string, profile: Route
   target.set(role, JSON.parse(JSON.stringify(profile)) as unknown)
 }
 
+function readFreePanels(map: Y.Map<unknown>): FreePanel[] {
+  const panels = map.get('freePanels') as Y.Array<unknown> | undefined
+  return panels ? sanitizeFreePanels(panels.toArray()) : []
+}
+
+/** Free panels are edited whole (moved, resized, deleted), so they are stored
+ *  as plain JSON rather than nested Y.Maps — per-field merge would only ever
+ *  produce boards nobody placed. */
+function writeFreePanels(map: Y.Map<unknown>, panels: FreePanel[]) {
+  let array = map.get('freePanels') as Y.Array<unknown> | undefined
+  if (!array) {
+    array = new Y.Array<unknown>()
+    map.set('freePanels', array)
+  }
+  if (array.length > 0) array.delete(0, array.length)
+  const capped = panels.slice(0, MAX_FREE_PANELS)
+  if (capped.length > 0) array.insert(0, capped.map(panel => JSON.parse(JSON.stringify(panel)) as unknown))
+}
+
 /** Read the `settings` branch as a POJO, filling any gap with the default. */
 function readSettingsMap(map: Y.Map<unknown>): ProjectSettings {
   const settings = map.get('settings') as Y.Map<unknown> | undefined
@@ -312,6 +357,7 @@ export function ensureInitialized(doc: Y.Doc) {
       const clean = readRouterProfiles(map)
       for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, clean[role])
     }
+    if (!map.has('freePanels')) map.set('freePanels', new Y.Array<unknown>())
     runPendingMigrations(doc)
     if (!map.has('columns')) {
       const cols = new Y.Array<Y.Map<unknown>>()
@@ -470,6 +516,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     drilling: readDrillingMap(map),
     joinery: readJoinery(map),
     routerProfiles: readRouterProfiles(map),
+    freePanels: readFreePanels(map),
     columns,
   }
 }
@@ -683,6 +730,99 @@ export function updateDrillingRule(doc: Y.Doc, role: string, ruleId: string, pat
     )
     writeDrillingRules(drilling, role, sanitizeDrillingMap({ [role]: next })[role as keyof DrillingMap])
   }, 'updateDrillingRule')
+}
+
+// ---------------- Free panels ----------------
+
+function mutateFreePanels(doc: Y.Doc, origin: string, mutate: (panels: FreePanel[]) => FreePanel[]) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    writeFreePanels(map, mutate(readFreePanels(map)))
+  }, origin)
+}
+
+export function addFreePanel(doc: Y.Doc, plane: PanelPlane, position?: Partial<Vec3>): string {
+  const id = cryptoRandomId()
+  mutateFreePanels(doc, 'addFreePanel', panels => [...panels, makeFreePanel({ id, plane, position })])
+  return id
+}
+
+export function removeFreePanels(doc: Y.Doc, ids: string[]) {
+  const drop = new Set(ids)
+  mutateFreePanels(doc, 'removeFreePanels', panels => panels.filter(panel => !drop.has(panel.id)))
+}
+
+export function updateFreePanel(doc: Y.Doc, id: string, patch: Partial<FreePanel>) {
+  mutateFreePanels(doc, 'updateFreePanel', panels => panels.map(panel =>
+    panel.id === id
+      ? {
+          ...panel,
+          ...patch,
+          size: { ...panel.size, ...(patch.size ?? {}) },
+          position: { ...panel.position, ...(patch.position ?? {}) },
+        }
+      : panel,
+  ))
+}
+
+export function nudgeFreePanels(doc: Y.Doc, ids: string[], axis: WorldAxis, direction: 1 | -1) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'nudgeFreePanels', panels =>
+    panels.map(panel => (set.has(panel.id) ? movedByThickness(panel, axis, direction) : panel)))
+}
+
+export function moveFreePanels(doc: Y.Doc, ids: string[], delta: Partial<Vec3>) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'moveFreePanels', panels =>
+    panels.map(panel => (set.has(panel.id) ? movedBy(panel, delta) : panel)))
+}
+
+export function resizeFreePanels(doc: Y.Doc, ids: string[], axis: WorldAxis, delta: number) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'resizeFreePanels', panels =>
+    panels.map(panel => (set.has(panel.id) ? resizedOnAxis(panel, axis, delta) : panel)))
+}
+
+export function duplicateFreePanelToPlane(doc: Y.Doc, id: string, plane: PanelPlane) {
+  mutateFreePanels(doc, 'duplicateFreePanelToPlane', (panels) => {
+    const source = panels.find(panel => panel.id === id)
+    return source ? [...panels, copiedToPlane(source, cryptoRandomId(), plane)] : panels
+  })
+}
+
+export function addPanelFromFace(doc: Y.Doc, id: string) {
+  mutateFreePanels(doc, 'addPanelFromFace', (panels) => {
+    const source = panels.find(panel => panel.id === id)
+    return source ? [...panels, panelFromFace(source, cryptoRandomId())] : panels
+  })
+}
+
+export function addPanelBetween(doc: Y.Doc, firstId: string, secondId: string) {
+  mutateFreePanels(doc, 'addPanelBetween', (panels) => {
+    const a = panels.find(panel => panel.id === firstId)
+    const b = panels.find(panel => panel.id === secondId)
+    if (!a || !b) return panels
+    const between = panelBetween(a, b, cryptoRandomId())
+    return between ? [...panels, between] : panels
+  })
+}
+
+export function centerFreePanels(doc: Y.Doc, ids: string[]) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'centerFreePanels', (panels) => {
+    const others = panels.filter(panel => !set.has(panel.id))
+    if (others.length === 0) return panels
+    return panels.map(panel => (set.has(panel.id) ? centeredOn(panel, others) : panel))
+  })
+}
+
+export function spaceFreePanelsEqually(doc: Y.Doc, ids: string[], axis: WorldAxis) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'spaceFreePanelsEqually', (panels) => {
+    const selected = panels.filter(panel => set.has(panel.id))
+    const spaced = new Map(equallySpaced(selected, axis).map(panel => [panel.id, panel]))
+    return panels.map(panel => spaced.get(panel.id) ?? panel)
+  })
 }
 
 export function setRouterProfile(doc: Y.Doc, role: string, patch: Partial<RouterProfile>) {

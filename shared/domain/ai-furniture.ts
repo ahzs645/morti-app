@@ -131,6 +131,7 @@ function cloneDraft(draft: AiFurnitureDraft): AiFurnitureDraft {
       drilling: draft.doc.drilling,
       joinery: { ...draft.doc.joinery },
       routerProfiles: draft.doc.routerProfiles,
+      freePanels: draft.doc.freePanels.map(panel => ({ ...panel })),
       columns: draft.doc.columns.map(column => ({
         width: column.width,
         modules: column.modules.map(module => ({ ...module })),
@@ -364,6 +365,7 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
     drilling: defaultDrillingMap(),
     joinery: { ...DEFAULT_JOINERY_SETTINGS },
     routerProfiles: defaultRouterProfileMap(),
+    freePanels: [],
     config,
     columns,
   }
@@ -388,6 +390,7 @@ function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, curren
       drilling: defaultDrillingMap(),
       joinery: { ...DEFAULT_JOINERY_SETTINGS },
       routerProfiles: defaultRouterProfileMap(),
+      freePanels: [],
       config,
       columns,
     },
@@ -417,6 +420,7 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
       drilling: defaultDrillingMap(),
       joinery: { ...DEFAULT_JOINERY_SETTINGS },
       routerProfiles: defaultRouterProfileMap(),
+      freePanels: [],
       config,
       columns,
     },

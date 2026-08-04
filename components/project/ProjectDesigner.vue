@@ -27,6 +27,12 @@ import {
   defaultRouterProfile,
 } from '~~/shared/domain/router-profiles'
 import { JOINT_STYLES } from '~~/shared/domain/joinery'
+import {
+  PANEL_PLANES,
+  type FreePanel,
+  type PanelPlane,
+  type WorldAxis,
+} from '~~/shared/domain/free-panels'
 import { PATTERN_ANCHORS, PATTERN_KINDS } from '~~/shared/domain/operations'
 import { HARDWARE_CATALOG } from '~~/shared/domain/hardware-catalog'
 import {
@@ -59,6 +65,16 @@ import {
   setJoineryValue,
   setFrameMemberCount,
   setRouterProfile,
+  addFreePanel,
+  removeFreePanels,
+  updateFreePanel,
+  nudgeFreePanels,
+  resizeFreePanels,
+  duplicateFreePanelToPlane,
+  addPanelFromFace,
+  addPanelBetween,
+  centerFreePanels,
+  spaceFreePanelsEqually,
   resetSettings,
   resetPanelAttributes,
   resetDrilling,
@@ -557,6 +573,75 @@ function onSelectedFrameMemberCommit(key: 'frameRailCount' | 'frameStileCount', 
   }
   input.value = sharedFrameValue(key)
 }
+
+// ---------------------------------------------------------------------------
+// Free panels (start / move & copy / resize / face / between / location tools)
+// ---------------------------------------------------------------------------
+
+const freePanelsOpen = ref(false)
+const selectedFreePanelIds = ref<string[]>([])
+
+const freePanels = computed(() => snapshot.value.freePanels)
+const panelPlanes = PANEL_PLANES
+const freePanelRoleItems = ALL_PANEL_ROLES.map(role => ({ value: role, label: PANEL_ROLE_LABEL[role] }))
+const moveAxes: { axis: WorldAxis, label: string }[] = [
+  { axis: 'x', label: 'X' },
+  { axis: 'y', label: 'Y' },
+  { axis: 'z', label: 'Z' },
+]
+
+/** Selection is by id, so it survives reordering and stale ids self-heal. */
+const selectedFreePanels = computed(() =>
+  freePanels.value.filter(panel => selectedFreePanelIds.value.includes(panel.id)),
+)
+const singleSelectedFreePanel = computed(() =>
+  selectedFreePanels.value.length === 1 ? selectedFreePanels.value[0] : null,
+)
+
+watch(freePanels, (panels) => {
+  const live = new Set(panels.map(panel => panel.id))
+  const pruned = selectedFreePanelIds.value.filter(id => live.has(id))
+  if (pruned.length !== selectedFreePanelIds.value.length) selectedFreePanelIds.value = pruned
+})
+
+function toggleFreePanelSelection(id: string, additive: boolean) {
+  const current = new Set(selectedFreePanelIds.value)
+  if (additive) {
+    if (current.has(id)) current.delete(id)
+    else current.add(id)
+    selectedFreePanelIds.value = [...current]
+  }
+  else {
+    selectedFreePanelIds.value = current.size === 1 && current.has(id) ? [] : [id]
+  }
+}
+
+function createFreePanel(plane: PanelPlane) {
+  selectedFreePanelIds.value = [addFreePanel(props.ydoc, plane)]
+}
+
+function deleteSelectedFreePanels() {
+  removeFreePanels(props.ydoc, selectedFreePanelIds.value)
+  selectedFreePanelIds.value = []
+}
+
+function commitFreePanelMetric(
+  panel: FreePanel,
+  group: 'size' | 'position',
+  axis: WorldAxis,
+  event: Event,
+) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm)) {
+    updateFreePanel(props.ydoc, panel.id, { [group]: { [axis]: mm / 1000 } } as never)
+  }
+  const current = freePanels.value.find(p => p.id === panel.id)
+  if (current) input.value = toMm(current[group][axis])
+}
+
+/** Resize step: one panel thickness, the same unit the nudge tools use. */
+const RESIZE_STEP = 0.018
 
 // ---------------------------------------------------------------------------
 // Joinery (magicJoints and the joint-cutting tools)
@@ -1712,6 +1797,273 @@ if (getCurrentScope()) {
                 aria-label="Open edges and grain settings"
                 @click="grainOpen = true"
               />
+
+              <UButton
+                icon="i-lucide-square-stack"
+                :label="freePanels.length > 0 ? `Free panels (${freePanels.length})` : 'Free panels'"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                block
+                class="justify-center active:scale-[0.97] transition-transform duration-150"
+                aria-label="Open free panels"
+                @click="freePanelsOpen = true"
+              />
+
+              <AppDialog
+                v-model:open="freePanelsOpen"
+                title="Free panels"
+                description="Boards placed outside the column structure. They join the same cutlist, costing, joinery, and 3D preview."
+              >
+                <div class="space-y-3 text-xs">
+                  <section>
+                    <h4 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Add on plane
+                    </h4>
+                    <div class="grid grid-cols-3 gap-1.5">
+                      <UButton
+                        v-for="plane in panelPlanes"
+                        :key="plane.value"
+                        :label="plane.value"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="justify-center active:scale-[0.97] transition-transform duration-150"
+                        :aria-label="`Add a panel on the ${plane.value} plane`"
+                        :title="plane.hint"
+                        @click="createFreePanel(plane.value)"
+                      />
+                    </div>
+                  </section>
+
+                  <section v-if="freePanels.length > 0">
+                    <h4 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Panels
+                    </h4>
+                    <ul class="max-h-40 space-y-1 overflow-y-auto pr-1">
+                      <li
+                        v-for="panel in freePanels"
+                        :key="panel.id"
+                      >
+                        <button
+                          type="button"
+                          :class="[
+                            'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left transition-colors duration-150',
+                            selectedFreePanelIds.includes(panel.id) ? 'bg-primary/15 text-highlighted' : 'bg-muted/40 text-default hover:bg-elevated',
+                          ]"
+                          :aria-pressed="selectedFreePanelIds.includes(panel.id)"
+                          :aria-label="`Select ${panel.label}`"
+                          @click="toggleFreePanelSelection(panel.id, $event.shiftKey)"
+                        >
+                          <span class="truncate">{{ panel.label }}</span>
+                          <span class="shrink-0 tabular-nums text-dimmed">
+                            {{ toMm(panel.size.x) }}×{{ toMm(panel.size.y) }}×{{ toMm(panel.size.z) }}
+                          </span>
+                        </button>
+                      </li>
+                    </ul>
+                  </section>
+
+                  <section v-if="selectedFreePanels.length > 0">
+                    <h4 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Move &amp; resize
+                    </h4>
+                    <div class="space-y-1.5">
+                      <div
+                        v-for="axis in moveAxes"
+                        :key="axis.axis"
+                        class="flex items-center gap-1.5"
+                      >
+                        <span class="w-4 shrink-0 text-muted">{{ axis.label }}</span>
+                        <UButton
+                          icon="i-lucide-minus"
+                          size="xs"
+                          color="neutral"
+                          variant="soft"
+                          :aria-label="`Move selection back along ${axis.label}`"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="nudgeFreePanels(props.ydoc, selectedFreePanelIds, axis.axis, -1)"
+                        />
+                        <UButton
+                          icon="i-lucide-plus"
+                          size="xs"
+                          color="neutral"
+                          variant="soft"
+                          :aria-label="`Move selection forward along ${axis.label}`"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="nudgeFreePanels(props.ydoc, selectedFreePanelIds, axis.axis, 1)"
+                        />
+                        <span class="ml-2 w-10 shrink-0 text-dimmed">size</span>
+                        <UButton
+                          icon="i-lucide-chevrons-left-right"
+                          size="xs"
+                          color="neutral"
+                          variant="ghost"
+                          :aria-label="`Shrink selection along ${axis.label}`"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="resizeFreePanels(props.ydoc, selectedFreePanelIds, axis.axis, -RESIZE_STEP)"
+                        />
+                        <UButton
+                          icon="i-lucide-chevrons-right-left"
+                          size="xs"
+                          color="neutral"
+                          variant="ghost"
+                          :aria-label="`Grow selection along ${axis.label}`"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="resizeFreePanels(props.ydoc, selectedFreePanelIds, axis.axis, RESIZE_STEP)"
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  <section v-if="selectedFreePanels.length > 0">
+                    <h4 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Derive &amp; place
+                    </h4>
+                    <div class="flex flex-wrap gap-1.5">
+                      <UButton
+                        v-if="singleSelectedFreePanel"
+                        icon="i-lucide-copy-plus"
+                        label="From face"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        aria-label="Add a panel covering the selected panel's face"
+                        @click="addPanelFromFace(props.ydoc, singleSelectedFreePanel.id)"
+                      />
+                      <UButton
+                        v-if="selectedFreePanels.length === 2"
+                        icon="i-lucide-between-horizontal-start"
+                        label="Fill between"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        aria-label="Add a panel filling the gap between the two selected panels"
+                        @click="addPanelBetween(props.ydoc, selectedFreePanelIds[0], selectedFreePanelIds[1])"
+                      />
+                      <UButton
+                        icon="i-lucide-align-center"
+                        label="Centre"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        aria-label="Centre the selection on the other panels"
+                        @click="centerFreePanels(props.ydoc, selectedFreePanelIds)"
+                      />
+                      <UButton
+                        v-if="selectedFreePanels.length >= 3"
+                        icon="i-lucide-align-vertical-space-around"
+                        label="Space evenly"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        aria-label="Distribute the selected panels evenly in height"
+                        @click="spaceFreePanelsEqually(props.ydoc, selectedFreePanelIds, 'y')"
+                      />
+                    </div>
+                    <div
+                      v-if="singleSelectedFreePanel"
+                      class="mt-1.5 flex flex-wrap items-center gap-1.5"
+                    >
+                      <span class="text-dimmed">Copy to</span>
+                      <UButton
+                        v-for="plane in panelPlanes"
+                        :key="plane.value"
+                        :label="plane.value"
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        :aria-label="`Copy the selected panel onto the ${plane.value} plane`"
+                        @click="duplicateFreePanelToPlane(props.ydoc, singleSelectedFreePanel.id, plane.value)"
+                      />
+                    </div>
+                  </section>
+
+                  <section
+                    v-if="singleSelectedFreePanel"
+                    class="rounded-lg bg-muted/40 p-2.5"
+                  >
+                    <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      {{ singleSelectedFreePanel.label }}
+                    </h4>
+                    <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-2 gap-y-1.5">
+                      <span />
+                      <span class="text-center text-dimmed">Size (mm)</span>
+                      <span class="text-center text-dimmed">Centre (mm)</span>
+                      <template
+                        v-for="axis in moveAxes"
+                        :key="axis.axis"
+                      >
+                        <span class="text-muted">{{ axis.label }}</span>
+                        <input
+                          :value="toMm(singleSelectedFreePanel.size[axis.axis])"
+                          type="text"
+                          inputmode="decimal"
+                          class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                          :aria-label="`Panel size along ${axis.label} in millimetres`"
+                          @keydown.enter.prevent="commitFreePanelMetric(singleSelectedFreePanel, 'size', axis.axis, $event)"
+                          @blur="commitFreePanelMetric(singleSelectedFreePanel, 'size', axis.axis, $event)"
+                        >
+                        <input
+                          :value="toMm(singleSelectedFreePanel.position[axis.axis])"
+                          type="text"
+                          inputmode="decimal"
+                          class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                          :aria-label="`Panel centre along ${axis.label} in millimetres`"
+                          @keydown.enter.prevent="commitFreePanelMetric(singleSelectedFreePanel, 'position', axis.axis, $event)"
+                          @blur="commitFreePanelMetric(singleSelectedFreePanel, 'position', axis.axis, $event)"
+                        >
+                      </template>
+                      <span class="text-muted">Part</span>
+                      <USelect
+                        :model-value="singleSelectedFreePanel.role"
+                        :items="freePanelRoleItems"
+                        value-key="value"
+                        label-key="label"
+                        size="xs"
+                        class="col-span-2 min-w-0"
+                        aria-label="Panel role, which drives its material, grain, banding, and drilling"
+                        @update:model-value="updateFreePanel(props.ydoc, singleSelectedFreePanel.id, { role: $event as never })"
+                      />
+                    </div>
+                  </section>
+
+                  <UButton
+                    v-if="selectedFreePanels.length > 0"
+                    icon="i-lucide-trash-2"
+                    :label="`Delete ${selectedFreePanels.length} panel${selectedFreePanels.length > 1 ? 's' : ''}`"
+                    size="xs"
+                    color="error"
+                    variant="soft"
+                    block
+                    class="justify-center active:scale-[0.97] transition-transform duration-150"
+                    aria-label="Delete the selected free panels"
+                    @click="deleteSelectedFreePanels"
+                  />
+
+                  <p
+                    v-if="freePanels.length === 0"
+                    class="text-dimmed"
+                  >
+                    No free panels yet. Add one on a plane above — it will appear in the 3D preview and the cutlist.
+                  </p>
+                </div>
+
+                <template #footer="{ close }">
+                  <UButton
+                    label="Done"
+                    color="neutral"
+                    variant="outline"
+                    class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
+                    @click="close()"
+                  />
+                </template>
+              </AppDialog>
 
               <UButton
                 icon="i-lucide-drill"

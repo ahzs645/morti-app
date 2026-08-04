@@ -29,6 +29,7 @@ function docWithSingleModule(type: ModuleType, extra: Record<string, unknown> = 
     drilling: defaultDrillingMap(),
     joinery: { ...DEFAULT_JOINERY_SETTINGS },
     routerProfiles: defaultRouterProfileMap(),
+    freePanels: [],
     columns: [
       { width: 0.5, modules: [{ id: 'm1', type, height: 1.2, ...extra }] },
     ],

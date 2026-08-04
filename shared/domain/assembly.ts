@@ -15,6 +15,7 @@ import { effectiveDepth, isHoleOperation } from '~~/shared/domain/operations'
 import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
 import { drillingOperationsForPanel } from '~~/shared/domain/drilling'
 import { applyJoinery } from '~~/shared/domain/joinery'
+import { compileFreePanels } from '~~/shared/domain/free-panels'
 import {
   type ProfileCutter,
   type RouterProfile,
@@ -807,10 +808,18 @@ function normalizePanel(panel: CompiledPanel, yOffset: number): CompiledPanel {
 export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOptions = {}): CompiledAssembly {
   const config = furnitureDoc.config
   const columns = furnitureDoc.columns
-  if (columns.length === 0) return { panels: [], operations: [], issues: [] }
-
   const totalWidth = columns.reduce((sum, column) => sum + column.width, 0)
-  if (!(totalWidth > 0)) return { panels: [], operations: [], issues: [] }
+
+  // A design can be nothing but free panels, so a missing or degenerate column
+  // structure still has to compile whatever free panels exist.
+  if (columns.length === 0 || !(totalWidth > 0)) {
+    const only = furnitureDoc.freePanels?.length ? compileFreePanels(furnitureDoc.freePanels) : []
+    const operations = furnitureDoc.joinery ? applyJoinery(only, furnitureDoc.joinery).operations : []
+    const normalized = operations.map(normalizeOperation)
+    const byKey = new Map(only.map(panel => [panel.key, panel]))
+    for (const operation of normalized) byKey.get(operation.targetPanelKey)?.operations.push(operation)
+    return { panels: only, operations: normalized, issues: [] }
+  }
 
   const columnHeights = columns.map(column => column.modules.reduce((sum, module) => sum + module.height, 0))
   const cells = buildCellGrid(columns, config)
@@ -886,6 +895,13 @@ export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOption
   }
 
   const normalizedPanels = panels.map(panel => normalizePanel(panel, config.sidePanelOverhang))
+
+  // Free panels are already in world coordinates, so they bypass the column
+  // offset that normalizePanel applies — but they join the same list, which is
+  // what gets them into the cutlist, costing, joinery, 3D, and export.
+  if (furnitureDoc.freePanels?.length) {
+    normalizedPanels.push(...compileFreePanels(furnitureDoc.freePanels))
+  }
 
   // Drilling rules are re-applied on every compile, against the *normalized*
   // panel sizes, so a pattern anchored to an edge follows the panel as the

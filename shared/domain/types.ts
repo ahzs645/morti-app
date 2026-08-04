@@ -1,6 +1,7 @@
 import type { DrillingMap } from './drilling'
 import type { JoinerySettings } from './joinery'
 import type { RouterProfileMap } from './router-profiles'
+import type { FreePanel } from './free-panels'
 import type { PanelAttributeMap } from './panel-attributes'
 import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
 
@@ -105,6 +106,8 @@ export interface FurnitureDoc {
   joinery: JoinerySettings
   /** Router edge profiles, keyed by `PanelRole`. */
   routerProfiles: RouterProfileMap
+  /** Free-standing panels placed outside the columns → modules structure. */
+  freePanels: FreePanel[]
   columns: FurnitureColumn[]
 }
 
@@ -385,6 +388,6 @@ export const PANEL_ROLE_SHORT_CODE: Record<PanelRole, string> = {
   'corner-brace': 'CBR',
 }
 
-export const DESIGN_SCHEMA_VERSION = 3
+export const DESIGN_SCHEMA_VERSION = 4
 export const ASSEMBLY_COMPILER_VERSION = 1
 export const TECHNICAL_RENDERER_VERSION = 1
