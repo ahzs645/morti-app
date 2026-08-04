@@ -780,7 +780,7 @@ function buildScene(options: BuildSceneOptions = {}) {
   const compiled = compileAssembly(fd)
   for (const panel of compiled.panels) {
     const group = new THREE.Group()
-    const geometry = compilePartGeometry(panel, compiled.operations, fd.routerProfiles)
+    const geometry = compilePartGeometry(panel, compiled.operations, fd.routerProfiles, fd.outlines)
     addOutlineExcludeAttribute(geometry, 0)
     const material = makePanelMaterial(panelMaterialMode(), panelMaterialSpec(panel))
     const mesh = new THREE.Mesh(geometry, material)

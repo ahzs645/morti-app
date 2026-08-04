@@ -15,6 +15,7 @@ import { DEFAULT_DIVIDER_COUNT, DEFAULT_FURNITURE_CONFIG, DEFAULT_PROJECT_SETTIN
 import { defaultDrillingMap } from './drilling'
 import { DEFAULT_JOINERY_SETTINGS } from './joinery'
 import { defaultRouterProfileMap } from './router-profiles'
+import { defaultOutlineMap } from './outline'
 import { defaultPanelAttributeMap } from './panel-attributes'
 import type { FurnitureDoc, ModuleType } from './types'
 import { DESIGN_SCHEMA_VERSION } from './types'
@@ -30,6 +31,7 @@ function docWithSingleModule(type: ModuleType, extra: Record<string, unknown> = 
     joinery: { ...DEFAULT_JOINERY_SETTINGS },
     routerProfiles: defaultRouterProfileMap(),
     freePanels: [],
+    outlines: defaultOutlineMap(),
     columns: [
       { width: 0.5, modules: [{ id: 'm1', type, height: 1.2, ...extra }] },
     ],

@@ -45,6 +45,8 @@ export interface CutlistPanelRow {
   banding?: string
   /** Router edge profile note, e.g. `Chamfer 6 mm T/B`. */
   edgeProfile?: string
+  /** Outline note for non-rectangular panels, e.g. `Arched top 25%`. */
+  shape?: string
 }
 
 export interface CutlistOperationRow {
@@ -111,6 +113,7 @@ interface Presenter {
   showGrain: boolean
   showBanding: boolean
   showProfile: boolean
+  showShape: boolean
 }
 
 function roundTo(value: number, precision: number): number {
@@ -127,6 +130,7 @@ function makePresenter(data: CutlistData): Presenter {
   const hasGrain = data.panels.some(row => row.grain != null)
   const hasBanding = data.panels.some(row => row.banding != null && row.banding !== '—')
   const hasProfile = data.panels.some(row => row.edgeProfile != null && row.edgeProfile !== '—')
+  const hasShape = data.panels.some(row => row.shape != null && row.shape !== '—')
   return {
     settings: s,
     lengthSymbol: LENGTH_UNIT_SYMBOL[s.lengthUnit],
@@ -151,6 +155,7 @@ function makePresenter(data: CutlistData): Presenter {
     showGrain: hasGrain,
     showBanding: hasBanding,
     showProfile: hasProfile,
+    showShape: hasShape,
   }
 }
 
@@ -170,6 +175,7 @@ function panelExtraHeaders(p: Presenter): string[] {
   if (p.showGrain) headers.push('Grain')
   if (p.showBanding) headers.push('Banding')
   if (p.showProfile) headers.push('Edge profile')
+  if (p.showShape) headers.push('Shape')
   if (p.showMaterial) headers.push('Material')
   if (p.showWeight) headers.push(`Weight (${WEIGHT_UNIT_SYMBOL[p.settings.weightUnit]})`)
   if (p.showCost) headers.push(`Cost (${p.settings.currency})`)
@@ -181,6 +187,7 @@ function panelExtraCells(row: CutlistPanelRow, p: Presenter): string[] {
   if (p.showGrain) cells.push(row.grain ?? '')
   if (p.showBanding) cells.push(row.banding ?? '')
   if (p.showProfile) cells.push(row.edgeProfile ?? '')
+  if (p.showShape) cells.push(row.shape ?? '')
   if (p.showMaterial) cells.push(row.material ?? '')
   if (p.showWeight) cells.push(row.weightKg == null ? '' : formatWeight(row.weightKg, p.settings.weightUnit))
   if (p.showCost) cells.push(row.cost == null ? '' : p.money(row.cost))

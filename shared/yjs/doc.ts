@@ -69,6 +69,13 @@ import {
   sanitizeFreePanels,
 } from '~~/shared/domain/free-panels'
 import {
+  type OutlineMap,
+  type PanelOutline,
+  defaultOutlineMap,
+  sanitizeOutline,
+  sanitizeOutlineMap,
+} from '~~/shared/domain/outline'
+import {
   DESIGN_SCHEMA_VERSION,
   PROJECT_SETTINGS_KEYS,
   type FurnitureColumn,
@@ -239,6 +246,22 @@ function writeRouterProfile(target: Y.Map<unknown>, role: string, profile: Route
   target.set(role, JSON.parse(JSON.stringify(profile)) as unknown)
 }
 
+/** Read the `outlines` branch as a POJO, filling any gap with defaults. */
+function readOutlines(map: Y.Map<unknown>): OutlineMap {
+  const outlines = map.get('outlines') as Y.Map<unknown> | undefined
+  if (!outlines) return defaultOutlineMap()
+  const raw: Record<string, unknown> = {}
+  for (const role of ALL_PANEL_ROLES) {
+    const entry = outlines.get(role)
+    if (entry) raw[role] = entry
+  }
+  return sanitizeOutlineMap(raw)
+}
+
+function writeOutline(target: Y.Map<unknown>, role: string, outline: PanelOutline) {
+  target.set(role, JSON.parse(JSON.stringify(outline)) as unknown)
+}
+
 function readFreePanels(map: Y.Map<unknown>): FreePanel[] {
   const panels = map.get('freePanels') as Y.Array<unknown> | undefined
   return panels ? sanitizeFreePanels(panels.toArray()) : []
@@ -358,6 +381,18 @@ export function ensureInitialized(doc: Y.Doc) {
       for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, clean[role])
     }
     if (!map.has('freePanels')) map.set('freePanels', new Y.Array<unknown>())
+    // Outlines default to `rectangle`, which keeps every panel on the box path.
+    if (!map.has('outlines')) {
+      const outlines = new Y.Map<unknown>()
+      map.set('outlines', outlines)
+      const defaults = defaultOutlineMap()
+      for (const role of ALL_PANEL_ROLES) writeOutline(outlines, role, defaults[role])
+    }
+    else {
+      const outlines = map.get('outlines') as Y.Map<unknown>
+      const clean = readOutlines(map)
+      for (const role of ALL_PANEL_ROLES) writeOutline(outlines, role, clean[role])
+    }
     runPendingMigrations(doc)
     if (!map.has('columns')) {
       const cols = new Y.Array<Y.Map<unknown>>()
@@ -517,6 +552,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     joinery: readJoinery(map),
     routerProfiles: readRouterProfiles(map),
     freePanels: readFreePanels(map),
+    outlines: readOutlines(map),
     columns,
   }
 }
@@ -730,6 +766,32 @@ export function updateDrillingRule(doc: Y.Doc, role: string, ruleId: string, pat
     )
     writeDrillingRules(drilling, role, sanitizeDrillingMap({ [role]: next })[role as keyof DrillingMap])
   }, 'updateDrillingRule')
+}
+
+export function setPanelOutline(doc: Y.Doc, role: string, patch: Partial<PanelOutline>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let outlines = map.get('outlines') as Y.Map<unknown> | undefined
+    if (!outlines) {
+      outlines = new Y.Map<unknown>()
+      map.set('outlines', outlines)
+    }
+    const current = readOutlines(map)[role as keyof OutlineMap]
+    writeOutline(outlines, role, sanitizeOutline({ ...current, ...patch }))
+  }, 'setPanelOutline')
+}
+
+export function resetPanelOutlines(doc: Y.Doc) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let outlines = map.get('outlines') as Y.Map<unknown> | undefined
+    if (!outlines) {
+      outlines = new Y.Map<unknown>()
+      map.set('outlines', outlines)
+    }
+    const defaults = defaultOutlineMap()
+    for (const role of ALL_PANEL_ROLES) writeOutline(outlines, role, defaults[role])
+  }, 'resetPanelOutlines')
 }
 
 // ---------------- Free panels ----------------

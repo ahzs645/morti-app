@@ -17,6 +17,14 @@ import { drillingOperationsForPanel } from '~~/shared/domain/drilling'
 import { applyJoinery } from '~~/shared/domain/joinery'
 import { compileFreePanels } from '~~/shared/domain/free-panels'
 import {
+  type OutlineMap,
+  type PanelOutline,
+  defaultOutlineMap,
+  outlineIsShaped,
+  outlineProfileForPanel,
+  profileSignedArea,
+} from '~~/shared/domain/outline'
+import {
   type ProfileCutter,
   type RouterProfile,
   type RouterProfileMap,
@@ -946,6 +954,7 @@ function panelGeometryCacheKey(
   panel: CompiledPanel,
   operations: PanelOperation[],
   profile?: RouterProfile,
+  outline?: PanelOutline,
 ): string {
   // The key must cover everything that changes the mesh: the panel's own
   // dimensions, every operation that cuts it, and its router profile. Missing
@@ -978,6 +987,10 @@ function panelGeometryCacheKey(
       ].join(',')
     : 'none'
 
+  const outlineKey = outlineIsShaped(outline)
+    ? [outline!.shape, outline!.amount.toFixed(4), outline!.points.length].join(',')
+    : 'rect'
+
   return [
     panel.role,
     panel.width.toFixed(6),
@@ -985,6 +998,7 @@ function panelGeometryCacheKey(
     panel.thickness.toFixed(6),
     ops,
     profileKey,
+    outlineKey,
   ].join('|')
 }
 
@@ -1029,13 +1043,44 @@ function routerCutterGeometry(cutter: ProfileCutter, evaluator: Evaluator): THRE
   return box
 }
 
+/**
+ * The panel's base solid: a plain box, or an extruded profile when the panel
+ * carries a non-rectangular outline. Extrusion is centred on z so the result
+ * occupies the same span a box would.
+ */
+function panelBaseGeometry(
+  panel: CompiledPanel,
+  outline: PanelOutline | undefined,
+  w: number,
+  h: number,
+  t: number,
+): THREE.BufferGeometry {
+  if (!outlineIsShaped(outline)) return new THREE.BoxGeometry(w, h, t)
+
+  const points = outlineProfileForPanel(outline, { width: w, height: h })
+  if (!points || points.length < 3) return new THREE.BoxGeometry(w, h, t)
+
+  // THREE.Shape expects counter-clockwise winding for the outer contour.
+  const wound = profileSignedArea(points) < 0 ? [...points].reverse() : points
+  const shape = new THREE.Shape()
+  shape.moveTo(wound[0].x, wound[0].y)
+  for (const point of wound.slice(1)) shape.lineTo(point.x, point.y)
+  shape.closePath()
+
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 12 })
+  geometry.translate(0, 0, -t / 2)
+  return geometry
+}
+
 export function compilePartGeometry(
   panel: CompiledPanel,
   operations: PanelOperation[],
   routerProfiles: RouterProfileMap = defaultRouterProfileMap(),
+  outlines: OutlineMap = defaultOutlineMap(),
 ): THREE.BufferGeometry {
   const profile = routerProfiles[panel.role]
-  const key = panelGeometryCacheKey(panel, operations, profile)
+  const outline = outlines[panel.role]
+  const key = panelGeometryCacheKey(panel, operations, profile, outline)
   const cached = GEOMETRY_CACHE.get(key)
   if (cached) return cached.clone()
 
@@ -1043,7 +1088,7 @@ export function compilePartGeometry(
   const h = Math.max(0.001, panel.height)
   const t = Math.max(0.001, panel.thickness)
 
-  const box = new THREE.BoxGeometry(w, h, t)
+  const box = panelBaseGeometry(panel, outline, w, h, t)
   let brushAccum = new Brush(box)
   brushAccum.updateMatrixWorld()
 

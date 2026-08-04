@@ -9,6 +9,7 @@ import {
 import { defaultDrillingMap } from './drilling'
 import { DEFAULT_JOINERY_SETTINGS } from './joinery'
 import { defaultRouterProfileMap } from './router-profiles'
+import { defaultOutlineMap } from './outline'
 import { defaultPanelAttributeMap } from './panel-attributes'
 import {
   DESIGN_SCHEMA_VERSION,
@@ -132,6 +133,7 @@ function cloneDraft(draft: AiFurnitureDraft): AiFurnitureDraft {
       joinery: { ...draft.doc.joinery },
       routerProfiles: draft.doc.routerProfiles,
       freePanels: draft.doc.freePanels.map(panel => ({ ...panel })),
+      outlines: draft.doc.outlines,
       columns: draft.doc.columns.map(column => ({
         width: column.width,
         modules: column.modules.map(module => ({ ...module })),
@@ -366,6 +368,7 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
     joinery: { ...DEFAULT_JOINERY_SETTINGS },
     routerProfiles: defaultRouterProfileMap(),
     freePanels: [],
+    outlines: defaultOutlineMap(),
     config,
     columns,
   }
@@ -391,6 +394,7 @@ function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, curren
       joinery: { ...DEFAULT_JOINERY_SETTINGS },
       routerProfiles: defaultRouterProfileMap(),
       freePanels: [],
+      outlines: defaultOutlineMap(),
       config,
       columns,
     },
@@ -421,6 +425,7 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
       joinery: { ...DEFAULT_JOINERY_SETTINGS },
       routerProfiles: defaultRouterProfileMap(),
       freePanels: [],
+      outlines: defaultOutlineMap(),
       config,
       columns,
     },

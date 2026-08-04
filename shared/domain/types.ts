@@ -2,6 +2,7 @@ import type { DrillingMap } from './drilling'
 import type { JoinerySettings } from './joinery'
 import type { RouterProfileMap } from './router-profiles'
 import type { FreePanel } from './free-panels'
+import type { OutlineMap } from './outline'
 import type { PanelAttributeMap } from './panel-attributes'
 import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
 
@@ -108,6 +109,8 @@ export interface FurnitureDoc {
   routerProfiles: RouterProfileMap
   /** Free-standing panels placed outside the columns → modules structure. */
   freePanels: FreePanel[]
+  /** Non-rectangular panel outlines, keyed by `PanelRole`. */
+  outlines: OutlineMap
   columns: FurnitureColumn[]
 }
 

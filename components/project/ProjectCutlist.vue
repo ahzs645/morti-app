@@ -16,6 +16,7 @@ import { computeCosting, costingInputsFromGroups } from '~~/shared/domain/costin
 import { computeBandList, edgeBandSummary } from '~~/shared/domain/edgeband'
 import { GRAIN_DIRECTION_CODE, attributesForRole } from '~~/shared/domain/panel-attributes'
 import { defaultRouterProfile, routerProfileSummary } from '~~/shared/domain/router-profiles'
+import { defaultOutline, outlineSummary } from '~~/shared/domain/outline'
 import { DEFAULT_PUBLIC_STYLE } from '~~/shared/domain/defaults'
 import type { CompiledPanel, PanelRole, PublicStyle } from '~~/shared/domain/types'
 import {
@@ -96,6 +97,8 @@ interface PanelRow {
   banding: string
   /** Router edge profile note. */
   edgeProfile: string
+  /** Outline note for non-rectangular panels. */
+  shape: string
 }
 
 interface OperationRow {
@@ -160,6 +163,7 @@ const panelRows = computed<PanelRow[]>(() => {
         grain: GRAIN_DIRECTION_CODE[attributesForRole(snapshot.value.panelAttributes, panel.role).grain],
         banding: edgeBandSummary(attributesForRole(snapshot.value.panelAttributes, panel.role).bands),
         edgeProfile: routerProfileSummary(snapshot.value.routerProfiles[panel.role] ?? defaultRouterProfile()),
+        shape: outlineSummary(snapshot.value.outlines[panel.role] ?? defaultOutline()),
       }
     })
     .sort((a, b) =>
@@ -280,7 +284,7 @@ const totals = computed(() => costing.value.totals)
 
 /** Base 7 columns plus whichever of material/weight/cost the project reports. */
 const panelColumnCount = computed(() =>
-  10
+  11
   + (settings.value.reportWeight || settings.value.reportCost ? 1 : 0)
   + (settings.value.reportWeight ? 1 : 0)
   + (settings.value.reportCost ? 1 : 0),
@@ -328,6 +332,7 @@ function exportCutlist(format: CutlistFormat) {
         grain: r.grain,
         banding: r.banding,
         edgeProfile: r.edgeProfile,
+        shape: r.shape,
       })),
       operations: operationRows.value.map(r => ({
         operationType: r.operationType,
@@ -422,6 +427,7 @@ function stop() {}
             <th class="border border-default px-2 py-1.5 font-medium">Grain</th>
             <th class="border border-default px-2 py-1.5 font-medium">Banding</th>
             <th class="border border-default px-2 py-1.5 font-medium">Edge profile</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Shape</th>
             <th
               v-if="settings.reportWeight || settings.reportCost"
               class="border border-default px-2 py-1.5 font-medium"
@@ -484,6 +490,9 @@ function stop() {}
             </td>
             <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
               {{ row.edgeProfile }}
+            </td>
+            <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
+              {{ row.shape }}
             </td>
             <td
               v-if="settings.reportWeight || settings.reportCost"

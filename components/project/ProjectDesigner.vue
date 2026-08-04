@@ -27,6 +27,7 @@ import {
   defaultRouterProfile,
 } from '~~/shared/domain/router-profiles'
 import { JOINT_STYLES } from '~~/shared/domain/joinery'
+import { OUTLINE_SHAPES, type PanelOutline, defaultOutline } from '~~/shared/domain/outline'
 import {
   PANEL_PLANES,
   type FreePanel,
@@ -65,6 +66,7 @@ import {
   setJoineryValue,
   setFrameMemberCount,
   setRouterProfile,
+  setPanelOutline,
   addFreePanel,
   removeFreePanels,
   updateFreePanel,
@@ -79,6 +81,7 @@ import {
   resetPanelAttributes,
   resetDrilling,
   resetRouterProfiles,
+  resetPanelOutlines,
 } from '~~/shared/yjs/doc'
 
 interface Props {
@@ -572,6 +575,23 @@ function onSelectedFrameMemberCommit(key: 'frameRailCount' | 'frameStileCount', 
     }
   }
   input.value = sharedFrameValue(key)
+}
+
+// ---------------------------------------------------------------------------
+// Panel outlines (panelSide*, panelBackOut, panelCoverXY, roundCurve, sketch2pad)
+// ---------------------------------------------------------------------------
+
+const outlineShapes = OUTLINE_SHAPES
+
+function outlineFor(role: PanelRole): PanelOutline {
+  return snapshot.value.outlines[role] ?? defaultOutline()
+}
+
+function commitOutlineAmount(role: PanelRole, event: Event) {
+  const input = event.target as HTMLInputElement
+  const percent = Number(input.value)
+  if (Number.isFinite(percent)) setPanelOutline(props.ydoc, role, { amount: percent / 100 })
+  input.value = String(Math.round(outlineFor(role).amount * 100))
 }
 
 // ---------------------------------------------------------------------------
@@ -1657,7 +1677,7 @@ if (getCurrentScope()) {
                 <AppDialog
                   v-model:open="grainOpen"
                   title="Edges &amp; grain"
-                  description="Grain direction, router edge profiles, and edge banding per panel role. Feeds the 3D preview, cutlist, and tape report."
+                  description="Outline, grain direction, router edge profiles, and edge banding per panel role. Feeds the 3D preview, cutlist, and tape report."
                 >
                   <div class="flex flex-wrap items-center justify-end gap-1 border-b border-default pb-3">
                     <UButton
@@ -1666,9 +1686,9 @@ if (getCurrentScope()) {
                       size="xs"
                       color="neutral"
                       variant="ghost"
-                      aria-label="Reset grain, router profiles, and edge banding"
+                      aria-label="Reset outlines, grain, router profiles, and edge banding"
                       class="active:scale-[0.97] transition-transform duration-150"
-                      @click="resetPanelAttributes(props.ydoc); resetRouterProfiles(props.ydoc)"
+                      @click="resetPanelAttributes(props.ydoc); resetRouterProfiles(props.ydoc); resetPanelOutlines(props.ydoc)"
                     />
                   </div>
 
@@ -1692,6 +1712,35 @@ if (getCurrentScope()) {
                           :aria-label="`Grain direction for ${PANEL_ROLE_LABEL[role]}`"
                           @update:model-value="setGrain(role, $event as never)"
                         />
+
+                        <span class="text-muted">Shape</span>
+                        <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <USelect
+                            :model-value="outlineFor(role).shape"
+                            :items="outlineShapes"
+                            value-key="value"
+                            label-key="label"
+                            size="xs"
+                            class="min-w-32 flex-1"
+                            :aria-label="`Panel outline for ${PANEL_ROLE_LABEL[role]}`"
+                            @update:model-value="setPanelOutline(props.ydoc, role, { shape: $event as never })"
+                          />
+                          <span
+                            v-if="outlineFor(role).shape !== 'rectangle' && outlineFor(role).shape !== 'custom'"
+                            class="flex items-center gap-1"
+                          >
+                            <input
+                              :value="Math.round(outlineFor(role).amount * 100)"
+                              type="text"
+                              inputmode="numeric"
+                              class="w-14 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              :aria-label="`Shape amount for ${PANEL_ROLE_LABEL[role]}`"
+                              @keydown.enter.prevent="commitOutlineAmount(role, $event)"
+                              @blur="commitOutlineAmount(role, $event)"
+                            >
+                            <span class="text-dimmed">%</span>
+                          </span>
+                        </div>
 
                         <span class="text-muted">Edge profile</span>
                         <div class="flex min-w-0 flex-wrap items-center gap-1.5">
