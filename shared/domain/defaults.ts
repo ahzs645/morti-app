@@ -1,5 +1,13 @@
-import type { CameraState, FurnitureColumn, FurnitureConfig, FurnitureModule, MaterialAssignment, ModuleType, PublicStyle } from './types'
+import type { CameraState, FurnitureColumn, FurnitureConfig, FurnitureModule, MaterialAssignment, ModuleType, ProjectSettings, PublicStyle } from './types'
 import { CUSTOM_MATERIAL_ID, DEFAULT_MATERIAL_ASSIGNMENTS, findPreset, MATERIAL_PRESETS } from './materials'
+import {
+  AREA_UNITS,
+  FRACTION_DENOMINATORS,
+  LENGTH_UNITS,
+  VOLUME_UNITS,
+  WEIGHT_UNITS,
+  type FractionDenominator,
+} from './units'
 
 // Default furniture config (Qe in compiled). All values in metres.
 export const DEFAULT_FURNITURE_CONFIG: FurnitureConfig = {
@@ -45,6 +53,69 @@ export const FURNITURE_CONFIG_WRITABLE_KEYS: (keyof FurnitureConfig)[] = [
   'minDrawerHeight',
   'maxDrawerHeight',
 ]
+
+// Metric millimetres out of the box — the practical cut-list unit, and what the
+// app already emitted before units were configurable.
+export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+  lengthUnit: 'mm',
+  lengthPrecision: 0,
+  edgeUnit: 'mm',
+  edgePrecision: 0,
+  areaUnit: 'm2',
+  areaPrecision: 3,
+  volumeUnit: 'm3',
+  weightUnit: 'kg',
+  fractionDenominator: 16,
+  currency: 'EUR',
+  costBasis: 'area',
+  reportWeight: true,
+  reportCost: true,
+  reportOperations: true,
+}
+
+const PRECISION_MIN = 0
+const PRECISION_MAX = 6
+
+function clampPrecision(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.max(PRECISION_MIN, Math.min(PRECISION_MAX, Math.round(value)))
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? value as T : fallback
+}
+
+const LENGTH_UNIT_VALUES = LENGTH_UNITS.map(u => u.value)
+const AREA_UNIT_VALUES = AREA_UNITS.map(u => u.value)
+const VOLUME_UNIT_VALUES = VOLUME_UNITS.map(u => u.value)
+const WEIGHT_UNIT_VALUES = WEIGHT_UNITS.map(u => u.value)
+
+/** Coerce anything (old docs, hand-edited JSON, AI output) into valid settings. */
+export function sanitizeProjectSettings(input: Partial<ProjectSettings> | null | undefined): ProjectSettings {
+  const s = input ?? {}
+  const currency = typeof s.currency === 'string' && /^[A-Za-z]{3}$/.test(s.currency)
+    ? s.currency.toUpperCase()
+    : DEFAULT_PROJECT_SETTINGS.currency
+  const denominator = FRACTION_DENOMINATORS.includes(s.fractionDenominator as FractionDenominator)
+    ? s.fractionDenominator as FractionDenominator
+    : DEFAULT_PROJECT_SETTINGS.fractionDenominator
+  return {
+    lengthUnit: oneOf(s.lengthUnit, LENGTH_UNIT_VALUES, DEFAULT_PROJECT_SETTINGS.lengthUnit),
+    lengthPrecision: clampPrecision(s.lengthPrecision, DEFAULT_PROJECT_SETTINGS.lengthPrecision),
+    edgeUnit: oneOf(s.edgeUnit, LENGTH_UNIT_VALUES, DEFAULT_PROJECT_SETTINGS.edgeUnit),
+    edgePrecision: clampPrecision(s.edgePrecision, DEFAULT_PROJECT_SETTINGS.edgePrecision),
+    areaUnit: oneOf(s.areaUnit, AREA_UNIT_VALUES, DEFAULT_PROJECT_SETTINGS.areaUnit),
+    areaPrecision: clampPrecision(s.areaPrecision, DEFAULT_PROJECT_SETTINGS.areaPrecision),
+    volumeUnit: oneOf(s.volumeUnit, VOLUME_UNIT_VALUES, DEFAULT_PROJECT_SETTINGS.volumeUnit),
+    weightUnit: oneOf(s.weightUnit, WEIGHT_UNIT_VALUES, DEFAULT_PROJECT_SETTINGS.weightUnit),
+    fractionDenominator: denominator,
+    currency,
+    costBasis: oneOf(s.costBasis, ['volume', 'area'] as const, DEFAULT_PROJECT_SETTINGS.costBasis),
+    reportWeight: typeof s.reportWeight === 'boolean' ? s.reportWeight : DEFAULT_PROJECT_SETTINGS.reportWeight,
+    reportCost: typeof s.reportCost === 'boolean' ? s.reportCost : DEFAULT_PROJECT_SETTINGS.reportCost,
+    reportOperations: typeof s.reportOperations === 'boolean' ? s.reportOperations : DEFAULT_PROJECT_SETTINGS.reportOperations,
+  }
+}
 
 export const MODULE_TYPES: ModuleType[] = ['shelf', 'shelves', 'dividers', 'drawer', 'doors', 'left-door', 'right-door']
 

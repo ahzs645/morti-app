@@ -4,6 +4,7 @@ import {
   cutlistFileName,
   serializeCutlist,
 } from './cutlist-export'
+import { DEFAULT_PROJECT_SETTINGS } from './defaults'
 
 const sample: CutlistData = {
   projectName: 'My "Shelf" Unit',
@@ -58,6 +59,65 @@ describe('cutlist export', () => {
     expect(cutlistFileName('My "Shelf" Unit', 'csv')).toBe('my-shelf-unit-cutlist.csv')
     expect(cutlistFileName('   ', 'json')).toBe('cutlist-cutlist.json')
     expect(cutlistFileName('Wardrobe', 'md')).toBe('wardrobe-cutlist.md')
+  })
+
+  it('renders dimensions in the project unit', () => {
+    const inches: CutlistData = {
+      ...sample,
+      settings: { ...DEFAULT_PROJECT_SETTINGS, lengthUnit: 'in', lengthPrecision: 2 },
+    }
+    const { content } = serializeCutlist(inches, 'csv')
+    expect(content).toContain('Width (in),Height (in),Thickness (in)')
+    // 0.45 m -> 17.72", 0.018 m -> 0.71"
+    expect(content).toContain('S1,vertical-side,vertical,17.72,13.39,0.71,2')
+  })
+
+  it('renders fractional inches and reports decimal inches in JSON', () => {
+    const fractional: CutlistData = {
+      ...sample,
+      panels: [{ groupId: 'S1', role: 'vertical-side', orientation: 'vertical', width: 0.4572, height: 0.3048, thickness: 0.01905, quantity: 2 }],
+      settings: { ...DEFAULT_PROJECT_SETTINGS, lengthUnit: 'fraction' },
+    }
+    // 0.4572 m = 18", 0.3048 m = 12", 0.01905 m = 3/4"
+    expect(serializeCutlist(fractional, 'csv').content).toContain('S1,vertical-side,vertical,18,12,3/4,2')
+    const parsed = JSON.parse(serializeCutlist(fractional, 'json').content)
+    expect(parsed.units).toBe('in')
+    expect(parsed.panels[0]).toMatchObject({ width: 18, height: 12, thickness: 0.75 })
+  })
+
+  it('omits material, weight, and cost columns when the data carries none', () => {
+    const { content } = serializeCutlist(sample, 'csv')
+    expect(content).not.toContain('Material')
+    expect(content).not.toContain('Weight')
+    expect(content).not.toContain('Cost')
+  })
+
+  it('adds material, weight, and cost columns plus a totals block', () => {
+    const priced: CutlistData = {
+      ...sample,
+      panels: sample.panels.map(p => ({ ...p, material: 'White Oak — Natural', weightKg: 1.5, cost: 12 })),
+      settings: DEFAULT_PROJECT_SETTINGS,
+      totals: { panelCount: 6, volumeM3: 0.01, faceAreaM2: 1.2, edgeLengthM: 8, weightKg: 7.55, cost: 74.4 },
+    }
+    const { content } = serializeCutlist(priced, 'csv')
+    expect(content).toContain('Qty,Material,Weight (kg),Cost (EUR)')
+    expect(content).toContain('White Oak — Natural,1.50')
+    expect(content).toContain('Totals')
+    expect(content).toContain('Panels,6')
+
+    const parsed = JSON.parse(serializeCutlist(priced, 'json').content)
+    expect(parsed.panels[0]).toMatchObject({ material: 'White Oak — Natural', cost: 12 })
+    expect(parsed.totals).toMatchObject({ panelCount: 6, weightUnit: 'kg', currency: 'EUR' })
+  })
+
+  it('drops the operations section when the project turns it off', () => {
+    const quiet: CutlistData = {
+      ...sample,
+      settings: { ...DEFAULT_PROJECT_SETTINGS, reportOperations: false },
+    }
+    const { content } = serializeCutlist(quiet, 'csv')
+    expect(content).not.toContain('Machining operations')
+    expect(JSON.parse(serializeCutlist(quiet, 'json').content).operations).toBeUndefined()
   })
 
   it('handles an empty cutlist without throwing', () => {

@@ -16,14 +16,18 @@ import {
   DIVIDER_COUNT_MAX,
   DIVIDER_COUNT_MIN,
   FURNITURE_CONFIG_WRITABLE_KEYS,
+  DEFAULT_PROJECT_SETTINGS,
+  sanitizeProjectSettings,
 } from '~~/shared/domain/defaults'
 import {
   DESIGN_SCHEMA_VERSION,
+  PROJECT_SETTINGS_KEYS,
   type FurnitureColumn,
   type FurnitureConfig,
   type FurnitureDoc,
   type FurnitureModule,
   type ModuleType,
+  type ProjectSettings,
 } from '~~/shared/domain/types'
 
 // Migrations table — each entry mutates the doc in place. Run once, in id order.
@@ -62,6 +66,15 @@ function sanitizeConfigValue<K extends keyof FurnitureConfig>(key: K, value: unk
     : DEFAULT_FURNITURE_CONFIG[key]) as FurnitureConfig[K]
 }
 
+/** Read the `settings` branch as a POJO, filling any gap with the default. */
+function readSettingsMap(map: Y.Map<unknown>): ProjectSettings {
+  const settings = map.get('settings') as Y.Map<unknown> | undefined
+  if (!settings) return { ...DEFAULT_PROJECT_SETTINGS }
+  const raw: Record<string, unknown> = {}
+  for (const key of PROJECT_SETTINGS_KEYS) raw[key] = settings.get(key)
+  return sanitizeProjectSettings(raw as Partial<ProjectSettings>)
+}
+
 export function getFurnitureMap(doc: Y.Doc): Y.Map<unknown> {
   return doc.getMap(ROOT_KEY)
 }
@@ -83,6 +96,22 @@ export function ensureInitialized(doc: Y.Doc) {
         if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
           cfg.set(k, DEFAULT_FURNITURE_CONFIG[k])
         }
+      }
+    }
+    // `settings` is presentation-only, so a doc written before it existed is
+    // simply seeded with the defaults — no schema bump or migration needed.
+    if (!map.has('settings')) {
+      const settings = new Y.Map<unknown>()
+      for (const key of PROJECT_SETTINGS_KEYS) settings.set(key, DEFAULT_PROJECT_SETTINGS[key])
+      map.set('settings', settings)
+    }
+    else {
+      const settings = map.get('settings') as Y.Map<unknown>
+      const raw: Record<string, unknown> = {}
+      for (const key of PROJECT_SETTINGS_KEYS) raw[key] = settings.get(key)
+      const clean = sanitizeProjectSettings(raw as Partial<ProjectSettings>)
+      for (const key of PROJECT_SETTINGS_KEYS) {
+        if (settings.get(key) !== clean[key]) settings.set(key, clean[key])
       }
     }
     runPendingMigrations(doc)
@@ -216,6 +245,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     schemaVersion: (map.get('schemaVersion') as number) ?? DESIGN_SCHEMA_VERSION,
     lastAppliedMigrationId: (map.get('lastAppliedMigrationId') as string | null) ?? null,
     config,
+    settings: readSettingsMap(map),
     columns,
   }
 }
@@ -340,10 +370,46 @@ export function setConfigValue<K extends keyof FurnitureConfig>(doc: Y.Doc, key:
   }, 'setConfigValue')
 }
 
-export function replaceFurnitureDoc(doc: Y.Doc, next: Pick<FurnitureDoc, 'config' | 'columns'>) {
+export function setSettingValue<K extends keyof ProjectSettings>(doc: Y.Doc, key: K, value: ProjectSettings[K]) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let settings = map.get('settings') as Y.Map<unknown> | undefined
+    if (!settings) {
+      settings = new Y.Map<unknown>()
+      for (const k of PROJECT_SETTINGS_KEYS) settings.set(k, DEFAULT_PROJECT_SETTINGS[k])
+      map.set('settings', settings)
+    }
+    const current = readSettingsMap(map)
+    const clean = sanitizeProjectSettings({ ...current, [key]: value })
+    settings.set(key as string, clean[key])
+  }, 'setSettingValue')
+}
+
+export function resetSettings(doc: Y.Doc) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let settings = map.get('settings') as Y.Map<unknown> | undefined
+    if (!settings) {
+      settings = new Y.Map<unknown>()
+      map.set('settings', settings)
+    }
+    for (const key of PROJECT_SETTINGS_KEYS) settings.set(key, DEFAULT_PROJECT_SETTINGS[key])
+  }, 'resetSettings')
+}
+
+export function replaceFurnitureDoc(doc: Y.Doc, next: Pick<FurnitureDoc, 'config' | 'columns'> & Partial<Pick<FurnitureDoc, 'settings'>>) {
   doc.transact(() => {
     const map = getFurnitureMap(doc)
     map.set('schemaVersion', DESIGN_SCHEMA_VERSION)
+    if (next.settings) {
+      let settings = map.get('settings') as Y.Map<unknown> | undefined
+      if (!settings) {
+        settings = new Y.Map<unknown>()
+        map.set('settings', settings)
+      }
+      const clean = sanitizeProjectSettings(next.settings)
+      for (const key of PROJECT_SETTINGS_KEYS) settings.set(key, clean[key])
+    }
     let cfg = map.get('config') as Y.Map<unknown> | undefined
     if (!cfg) {
       cfg = new Y.Map<unknown>()

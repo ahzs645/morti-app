@@ -1,5 +1,6 @@
 import {
   DEFAULT_FURNITURE_CONFIG,
+  DEFAULT_PROJECT_SETTINGS,
   DRAWER_COUNT_MAX,
   DRAWER_COUNT_MIN,
   cryptoRandomId,
@@ -121,6 +122,7 @@ function cloneDraft(draft: AiFurnitureDraft): AiFurnitureDraft {
       schemaVersion: draft.doc.schemaVersion,
       lastAppliedMigrationId: draft.doc.lastAppliedMigrationId,
       config: { ...draft.doc.config },
+      settings: { ...draft.doc.settings },
       columns: draft.doc.columns.map(column => ({
         width: column.width,
         modules: column.modules.map(module => ({ ...module })),
@@ -349,6 +351,7 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
   return {
     schemaVersion: DESIGN_SCHEMA_VERSION,
     lastAppliedMigrationId: null,
+    settings: { ...DEFAULT_PROJECT_SETTINGS },
     config,
     columns,
   }
@@ -368,6 +371,7 @@ function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, curren
     doc: {
       schemaVersion: DESIGN_SCHEMA_VERSION,
       lastAppliedMigrationId: null,
+      settings: { ...DEFAULT_PROJECT_SETTINGS },
       config,
       columns,
     },
@@ -392,6 +396,7 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
     doc: {
       schemaVersion: DESIGN_SCHEMA_VERSION,
       lastAppliedMigrationId: null,
+      settings: { ...DEFAULT_PROJECT_SETTINGS },
       config,
       columns,
     },

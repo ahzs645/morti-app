@@ -1,3 +1,5 @@
+import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
+
 export type ModuleType = 'shelf' | 'shelves' | 'dividers' | 'drawer' | 'doors' | 'left-door' | 'right-door'
 
 export interface FurnitureModule {
@@ -36,10 +38,59 @@ export interface FurnitureConfig {
   maxDrawerHeight: number
 }
 
+/** Which rate a project prices against. Mirrors `magicSettings`, which offers
+ *  both a per-volume (timber) and a per-area (sheet goods) price. */
+export type CostBasis = 'volume' | 'area'
+
+/**
+ * Presentation and reporting preferences — the Morti analogue of
+ * `magicSettings` plus the unit/precision selectors in `getDimensions`.
+ *
+ * These never affect stored geometry (which is always metres on a 1 mm grid);
+ * they only change how numbers are displayed, parsed, and reported.
+ */
+export interface ProjectSettings {
+  lengthUnit: LengthUnit
+  lengthPrecision: number
+  /** Woodworking reports edge banding in its own unit; so do we. */
+  edgeUnit: LengthUnit
+  edgePrecision: number
+  areaUnit: AreaUnit
+  areaPrecision: number
+  volumeUnit: VolumeUnit
+  weightUnit: WeightUnit
+  /** Denominator used when `lengthUnit` or `edgeUnit` is `fraction`. */
+  fractionDenominator: FractionDenominator
+  /** ISO 4217 code used to format costs. */
+  currency: string
+  costBasis: CostBasis
+  reportWeight: boolean
+  reportCost: boolean
+  reportOperations: boolean
+}
+
+export const PROJECT_SETTINGS_KEYS: (keyof ProjectSettings)[] = [
+  'lengthUnit',
+  'lengthPrecision',
+  'edgeUnit',
+  'edgePrecision',
+  'areaUnit',
+  'areaPrecision',
+  'volumeUnit',
+  'weightUnit',
+  'fractionDenominator',
+  'currency',
+  'costBasis',
+  'reportWeight',
+  'reportCost',
+  'reportOperations',
+]
+
 export interface FurnitureDoc {
   schemaVersion: number
   lastAppliedMigrationId: string | null
   config: FurnitureConfig
+  settings: ProjectSettings
   columns: FurnitureColumn[]
 }
 

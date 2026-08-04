@@ -3,7 +3,14 @@ import type * as Y from 'yjs'
 import type { AiFurnitureDraft, AiFurnitureGenerateResponse } from '~~/shared/domain/ai-furniture'
 import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
 import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_SHELF_COUNT, SHELF_COUNT_MAX, SHELF_COUNT_MIN, DIVIDER_COUNT_MAX, DIVIDER_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
-import type { FurnitureConfig, FurnitureModule, ModuleType } from '~~/shared/domain/types'
+import type { FurnitureConfig, FurnitureModule, ModuleType, ProjectSettings } from '~~/shared/domain/types'
+import {
+  AREA_UNITS,
+  FRACTION_DENOMINATORS,
+  LENGTH_UNITS,
+  VOLUME_UNITS,
+  WEIGHT_UNITS,
+} from '~~/shared/domain/units'
 import { validateFurnitureDocIssues } from '~~/shared/domain/assembly-validation'
 import {
   insertColumn,
@@ -19,6 +26,8 @@ import {
   setDividerCount,
   setModuleHeight,
   setModuleType,
+  setSettingValue,
+  resetSettings,
 } from '~~/shared/yjs/doc'
 
 interface Props {
@@ -418,6 +427,57 @@ const settingsOpen = ref(false)
 const copiedConfig = ref(false)
 let copiedConfigTimer: ReturnType<typeof setTimeout> | undefined
 
+// ---------------------------------------------------------------------------
+// Units & reporting (magicSettings / getDimensions)
+// ---------------------------------------------------------------------------
+
+const projectSettings = computed(() => snapshot.value.settings)
+
+const COST_BASIS_OPTIONS = [
+  { value: 'volume' as const, label: 'Per cubic metre (timber)' },
+  { value: 'area' as const, label: 'Per square metre (sheet goods)' },
+]
+
+/** One row per preference, rendered as a labelled select in the settings dialog. */
+const settingsSelectFields = computed(() => [
+  { key: 'lengthUnit' as const, label: 'Dimension units', items: LENGTH_UNITS, help: 'Unit used for panel dimensions in the inspector, cutlist, and exports.' },
+  { key: 'edgeUnit' as const, label: 'Edge units', items: LENGTH_UNITS, help: 'Unit used for edge lengths and banding runs.' },
+  { key: 'areaUnit' as const, label: 'Area units', items: AREA_UNITS, help: 'Unit used for sheet and face-area totals.' },
+  { key: 'volumeUnit' as const, label: 'Volume units', items: VOLUME_UNITS, help: 'Unit used for timber volume totals. Board feet is the trade unit for rough lumber.' },
+  { key: 'weightUnit' as const, label: 'Weight units', items: WEIGHT_UNITS, help: 'Unit used for the wood weight rollup.' },
+  { key: 'costBasis' as const, label: 'Cost basis', items: COST_BASIS_OPTIONS, help: 'Price against timber volume (m³) or sheet-goods face area (m²).' },
+])
+
+const settingsToggleFields = [
+  { key: 'reportWeight' as const, label: 'Report weight', help: 'Show a weight column and total in the cutlist and exports.' },
+  { key: 'reportCost' as const, label: 'Report cost', help: 'Show a material cost column and total in the cutlist and exports.' },
+  { key: 'reportOperations' as const, label: 'Report operations', help: 'Include the machining-operations section in exports.' },
+]
+
+const fractionDenominatorItems = FRACTION_DENOMINATORS.map(d => ({ value: d, label: `1/${d}"` }))
+
+/** Fractional inches replace decimal places with a denominator choice. */
+const showsFractionDenominator = computed(() =>
+  projectSettings.value.lengthUnit === 'fraction' || projectSettings.value.edgeUnit === 'fraction',
+)
+
+function updateSetting<K extends keyof ProjectSettings>(key: K, value: ProjectSettings[K]) {
+  setSettingValue(props.ydoc, key, value)
+}
+
+function commitPrecision(key: 'lengthPrecision' | 'edgePrecision' | 'areaPrecision', event: Event) {
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (Number.isFinite(parsed)) updateSetting(key, parsed)
+  input.value = String(projectSettings.value[key])
+}
+
+function commitCurrency(event: Event) {
+  const input = event.target as HTMLInputElement
+  updateSetting('currency', input.value.trim().toUpperCase())
+  input.value = projectSettings.value.currency
+}
+
 const aiBuildOpen = ref(false)
 const aiPrompt = ref('')
 const aiLoading = ref(false)
@@ -548,6 +608,8 @@ function resetConfig() {
   for (const k of FURNITURE_CONFIG_WRITABLE_KEYS) {
     setConfigValue(props.ydoc, k, DEFAULT_FURNITURE_CONFIG[k])
   }
+  // The dialog covers units and reporting too, so Reset clears both sections.
+  resetSettings(props.ydoc)
 }
 
 function configJson() {
@@ -556,7 +618,7 @@ function configJson() {
     acc[field.key] = effectiveConfig.value[key] ?? DEFAULT_FURNITURE_CONFIG[key]
     return acc
   }, {})
-  return JSON.stringify(values, null, 2)
+  return JSON.stringify({ ...values, settings: projectSettings.value }, null, 2)
 }
 
 async function openAiBuilder() {
@@ -1010,6 +1072,140 @@ if (getCurrentScope()) {
                   </div>
 
                   <dl class="grid max-h-[min(24rem,55vh)] grid-cols-[1fr_auto] gap-x-3 gap-y-2 overflow-y-auto pr-1 text-xs">
+                    <dt class="col-span-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Units &amp; reporting
+                    </dt>
+
+                    <template
+                      v-for="field in settingsSelectFields"
+                      :key="field.key"
+                    >
+                      <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
+                        <span class="truncate">{{ field.label }}</span>
+                        <UTooltip
+                          :text="field.help"
+                          :delay-duration="100"
+                          :content="{ side: 'left', sideOffset: 6 }"
+                        >
+                          <button
+                            type="button"
+                            class="config-help-icon active:scale-[0.97] transition-transform duration-150"
+                            :aria-label="`${field.label} help`"
+                          >
+                            <UIcon
+                              name="i-lucide-circle-help"
+                              class="size-3.5"
+                            />
+                          </button>
+                        </UTooltip>
+                      </dt>
+                      <dd>
+                        <USelect
+                          :model-value="projectSettings[field.key]"
+                          :items="field.items"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          class="w-52"
+                          :aria-label="field.label"
+                          @update:model-value="updateSetting(field.key, $event as never)"
+                        />
+                      </dd>
+                    </template>
+
+                    <template v-if="showsFractionDenominator">
+                      <dt class="flex min-w-0 items-center self-center text-muted">
+                        <span class="truncate">Fraction size</span>
+                      </dt>
+                      <dd>
+                        <USelect
+                          :model-value="projectSettings.fractionDenominator"
+                          :items="fractionDenominatorItems"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          class="w-52"
+                          aria-label="Smallest fraction shown for fractional inches"
+                          @update:model-value="updateSetting('fractionDenominator', $event as never)"
+                        />
+                      </dd>
+                    </template>
+
+                    <template v-else>
+                      <dt class="flex min-w-0 items-center self-center text-muted">
+                        <span class="truncate">Decimal places</span>
+                      </dt>
+                      <dd>
+                        <div class="flex items-center gap-1">
+                          <input
+                            :value="projectSettings.lengthPrecision"
+                            type="text"
+                            inputmode="numeric"
+                            class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                            aria-label="Decimal places for dimensions"
+                            @keydown.enter.prevent="commitPrecision('lengthPrecision', $event)"
+                            @blur="commitPrecision('lengthPrecision', $event)"
+                          >
+                          <span class="text-muted lowercase">dp</span>
+                        </div>
+                      </dd>
+                    </template>
+
+                    <dt class="flex min-w-0 items-center self-center text-muted">
+                      <span class="truncate">Currency</span>
+                    </dt>
+                    <dd>
+                      <div class="flex items-center gap-1">
+                        <input
+                          :value="projectSettings.currency"
+                          type="text"
+                          maxlength="3"
+                          class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs uppercase tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                          aria-label="Currency code used for material cost"
+                          @keydown.enter.prevent="commitCurrency($event)"
+                          @blur="commitCurrency($event)"
+                        >
+                        <span class="text-muted lowercase">iso</span>
+                      </div>
+                    </dd>
+
+                    <template
+                      v-for="field in settingsToggleFields"
+                      :key="field.key"
+                    >
+                      <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
+                        <span class="truncate">{{ field.label }}</span>
+                        <UTooltip
+                          :text="field.help"
+                          :delay-duration="100"
+                          :content="{ side: 'left', sideOffset: 6 }"
+                        >
+                          <button
+                            type="button"
+                            class="config-help-icon active:scale-[0.97] transition-transform duration-150"
+                            :aria-label="`${field.label} help`"
+                          >
+                            <UIcon
+                              name="i-lucide-circle-help"
+                              class="size-3.5"
+                            />
+                          </button>
+                        </UTooltip>
+                      </dt>
+                      <dd class="flex justify-end">
+                        <USwitch
+                          :model-value="projectSettings[field.key]"
+                          size="sm"
+                          :aria-label="field.label"
+                          @update:model-value="updateSetting(field.key, $event)"
+                        />
+                      </dd>
+                    </template>
+
+                    <dt class="col-span-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Construction
+                    </dt>
+
                     <template
                       v-for="field in projectDesignerConfigFields"
                       :key="field.key"

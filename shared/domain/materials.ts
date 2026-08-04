@@ -5,6 +5,8 @@
  * exported separately for the 2D picker chips.
  */
 
+import type { PanelRole } from './types'
+
 export type MaterialCategory = 'Solid wood' | 'Engineered' | 'Painted' | 'Treated'
 export type MaterialGrain =
   | 'oak'
@@ -28,19 +30,32 @@ export interface MaterialPreset {
   metalness: number
   grain: MaterialGrain
   sheen: MaterialSheen
+  /** Dry density, kg/m³ — drives the weight rollup in `costing.ts`. */
+  densityKgM3: number
+  /** Timber-trade price per cubic metre, used when the cost basis is `volume`. */
+  pricePerM3: number
+  /** Flat sheet-goods price per square metre of face area, used when the cost
+   *  basis is `area`. Sheet goods are sold by the sheet at a given thickness,
+   *  so this rate is thickness-independent by design (as in `magicSettings`). */
+  pricePerM2: number
 }
 
 export const CUSTOM_MATERIAL_ID = 'custom'
 
+/** Rates applied to `custom` and unknown presets so costing never returns NaN. */
+export const FALLBACK_DENSITY_KG_M3 = 700
+export const FALLBACK_PRICE_PER_M3 = 1200
+export const FALLBACK_PRICE_PER_M2 = 40
+
 export const MATERIAL_PRESETS: MaterialPreset[] = [
-  { id: 'white-oak',        label: 'White Oak — Natural', category: 'Solid wood', sheenLabel: 'Satin oil',     hex: '#c8a877', roughness: 0.62, metalness: 0.05, grain: 'oak',              sheen: 'satin' },
-  { id: 'walnut-oiled',     label: 'Walnut — Oiled',      category: 'Solid wood', sheenLabel: 'Hand-rubbed',   hex: '#5b3e2b', roughness: 0.55, metalness: 0.06, grain: 'walnut',           sheen: 'satin' },
-  { id: 'hard-maple',       label: 'Hard Maple',          category: 'Solid wood', sheenLabel: 'Satin lacquer', hex: '#e6cfa8', roughness: 0.45, metalness: 0.05, grain: 'maple',            sheen: 'satin' },
-  { id: 'cherry-aged',      label: 'Cherry — Aged',       category: 'Solid wood', sheenLabel: 'Warm satin',    hex: '#8a4a32', roughness: 0.40, metalness: 0.06, grain: 'cherry',           sheen: 'satin' },
-  { id: 'baltic-birch',     label: 'Baltic Birch Ply',    category: 'Engineered', sheenLabel: 'Light wax',     hex: '#dcc18a', roughness: 0.50, metalness: 0.04, grain: 'birch',            sheen: 'satin' },
-  { id: 'ebonized-oak',     label: 'Ebonized Oak',        category: 'Treated',    sheenLabel: 'Open pore',     hex: '#1f1a17', roughness: 0.58, metalness: 0.06, grain: 'ebonized',         sheen: 'matte' },
-  { id: 'white-lacquer',    label: 'White Lacquer',       category: 'Painted',    sheenLabel: 'Semi-gloss',    hex: '#efece6', roughness: 0.18, metalness: 0.02, grain: 'lacquer-white',    sheen: 'semigloss' },
-  { id: 'charcoal-lacquer', label: 'Charcoal Lacquer',    category: 'Painted',    sheenLabel: 'Semi-gloss',    hex: '#2a2826', roughness: 0.22, metalness: 0.04, grain: 'lacquer-charcoal', sheen: 'semigloss' },
+  { id: 'white-oak',        label: 'White Oak — Natural', category: 'Solid wood', sheenLabel: 'Satin oil',     hex: '#c8a877', roughness: 0.62, metalness: 0.05, grain: 'oak',              sheen: 'satin',     densityKgM3: 755, pricePerM3: 1800, pricePerM2: 62 },
+  { id: 'walnut-oiled',     label: 'Walnut — Oiled',      category: 'Solid wood', sheenLabel: 'Hand-rubbed',   hex: '#5b3e2b', roughness: 0.55, metalness: 0.06, grain: 'walnut',           sheen: 'satin',     densityKgM3: 660, pricePerM3: 4200, pricePerM2: 120 },
+  { id: 'hard-maple',       label: 'Hard Maple',          category: 'Solid wood', sheenLabel: 'Satin lacquer', hex: '#e6cfa8', roughness: 0.45, metalness: 0.05, grain: 'maple',            sheen: 'satin',     densityKgM3: 705, pricePerM3: 2200, pricePerM2: 70 },
+  { id: 'cherry-aged',      label: 'Cherry — Aged',       category: 'Solid wood', sheenLabel: 'Warm satin',    hex: '#8a4a32', roughness: 0.40, metalness: 0.06, grain: 'cherry',           sheen: 'satin',     densityKgM3: 580, pricePerM3: 3200, pricePerM2: 95 },
+  { id: 'baltic-birch',     label: 'Baltic Birch Ply',    category: 'Engineered', sheenLabel: 'Light wax',     hex: '#dcc18a', roughness: 0.50, metalness: 0.04, grain: 'birch',            sheen: 'satin',     densityKgM3: 680, pricePerM3: 1400, pricePerM2: 48 },
+  { id: 'ebonized-oak',     label: 'Ebonized Oak',        category: 'Treated',    sheenLabel: 'Open pore',     hex: '#1f1a17', roughness: 0.58, metalness: 0.06, grain: 'ebonized',         sheen: 'matte',     densityKgM3: 755, pricePerM3: 1950, pricePerM2: 68 },
+  { id: 'white-lacquer',    label: 'White Lacquer',       category: 'Painted',    sheenLabel: 'Semi-gloss',    hex: '#efece6', roughness: 0.18, metalness: 0.02, grain: 'lacquer-white',    sheen: 'semigloss', densityKgM3: 750, pricePerM3: 900,  pricePerM2: 32 },
+  { id: 'charcoal-lacquer', label: 'Charcoal Lacquer',    category: 'Painted',    sheenLabel: 'Semi-gloss',    hex: '#2a2826', roughness: 0.22, metalness: 0.04, grain: 'lacquer-charcoal', sheen: 'semigloss', densityKgM3: 750, pricePerM3: 950,  pricePerM2: 34 },
 ]
 
 export const MATERIAL_CATEGORY_ORDER: MaterialCategory[] = [
@@ -51,6 +66,16 @@ export const MATERIAL_CATEGORY_ORDER: MaterialCategory[] = [
 ]
 
 export type CabinetPart = 'carcass' | 'sides' | 'deck' | 'fronts'
+
+/** Which material slot a compiled panel draws from. Shared by the 3D canvas
+ *  (`DesignerCanvas.vue › partForPanel`) and the costing rollup so both price
+ *  and render a panel from the same assignment. */
+export function cabinetPartForRole(role: PanelRole): CabinetPart {
+  if (role === 'vertical-side' || role === 'vertical-divider') return 'sides'
+  if (role === 'horizontal-deck' || role === 'internal-shelf') return 'deck'
+  if (role === 'door-front' || role === 'drawer-front') return 'fronts'
+  return 'carcass'
+}
 
 export const CABINET_PARTS: { key: CabinetPart, label: string, hint: string }[] = [
   { key: 'carcass', label: 'Carcass', hint: 'Default for unspecified panels' },
@@ -90,6 +115,12 @@ export interface ResolvedMaterial {
   sheenLabel: string
   /** Grain pattern for the 3D triplanar shader. Lacquer/custom = no grain. */
   grain: MaterialGrain
+  /** Dry density, kg/m³. */
+  densityKgM3: number
+  /** Price per cubic metre. */
+  pricePerM3: number
+  /** Price per square metre of face area. */
+  pricePerM2: number
 }
 
 /** Verbatim Morti baseline (Dt_x5Iy5.js panel material defaults).
@@ -113,6 +144,9 @@ export function resolveMaterial(
       label: preset.label,
       sheenLabel: preset.sheenLabel,
       grain: preset.grain,
+      densityKgM3: preset.densityKgM3,
+      pricePerM3: preset.pricePerM3,
+      pricePerM2: preset.pricePerM2,
     }
   }
   if (presetId === CUSTOM_MATERIAL_ID) {
@@ -124,6 +158,9 @@ export function resolveMaterial(
       label: 'Custom',
       sheenLabel: 'Hex override',
       grain: 'custom',
+      densityKgM3: FALLBACK_DENSITY_KG_M3,
+      pricePerM3: FALLBACK_PRICE_PER_M3,
+      pricePerM2: FALLBACK_PRICE_PER_M2,
     }
   }
   return {
@@ -134,6 +171,9 @@ export function resolveMaterial(
     label: 'Custom',
     sheenLabel: 'Hex override',
     grain: 'custom',
+    densityKgM3: FALLBACK_DENSITY_KG_M3,
+    pricePerM3: FALLBACK_PRICE_PER_M3,
+    pricePerM2: FALLBACK_PRICE_PER_M2,
   }
 }
 
