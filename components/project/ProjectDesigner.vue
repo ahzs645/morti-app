@@ -28,6 +28,8 @@ import {
 } from '~~/shared/domain/router-profiles'
 import { JOINT_STYLES } from '~~/shared/domain/joinery'
 import { OUTLINE_SHAPES, type PanelOutline, defaultOutline } from '~~/shared/domain/outline'
+import { conflictingBindings, variableForField } from '~~/shared/domain/variables'
+import type { TransportLimits } from '~~/shared/domain/occupied-space'
 import {
   PANEL_PLANES,
   type FreePanel,
@@ -67,6 +69,10 @@ import {
   setFrameMemberCount,
   setRouterProfile,
   setPanelOutline,
+  addVariable,
+  removeVariable,
+  updateVariable,
+  setTransportLimit,
   addFreePanel,
   removeFreePanels,
   updateFreePanel,
@@ -575,6 +581,53 @@ function onSelectedFrameMemberCommit(key: 'frameRailCount' | 'frameStileCount', 
     }
   }
   input.value = sharedFrameValue(key)
+}
+
+// ---------------------------------------------------------------------------
+// Variables & transport (Std_VarSet, showAlias, showOccupiedSpace)
+// ---------------------------------------------------------------------------
+
+const variables = computed(() => snapshot.value.variables)
+const transport = computed(() => snapshot.value.transport)
+
+const bindableFields = projectDesignerConfigFields.map(field => ({
+  value: field.key as keyof FurnitureConfig,
+  label: field.label,
+}))
+
+const bindingConflicts = computed(() => conflictingBindings(variables.value))
+
+const transportFields: { key: keyof TransportLimits, label: string }[] = [
+  { key: 'width', label: 'Door / opening width' },
+  { key: 'height', label: 'Door / opening height' },
+  { key: 'length', label: 'Vehicle load length' },
+]
+
+function commitVariableValue(id: string, event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm) && mm >= 0) updateVariable(props.ydoc, id, { value: mm / 1000 })
+  const current = variables.value.find(v => v.id === id)
+  if (current) input.value = toMm(current.value)
+}
+
+function commitVariableName(id: string, event: Event) {
+  const input = event.target as HTMLInputElement
+  updateVariable(props.ydoc, id, { name: input.value })
+  const current = variables.value.find(v => v.id === id)
+  if (current) input.value = current.name
+}
+
+function commitTransportLimit(key: keyof TransportLimits, event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm) && mm >= 0) setTransportLimit(props.ydoc, key, mm / 1000)
+  input.value = toMm(transport.value[key])
+}
+
+/** Alias shown against a config field that a variable drives. */
+function aliasFor(key: string): string | null {
+  return variableForField(variables.value, key as keyof FurnitureConfig)?.name ?? null
 }
 
 // ---------------------------------------------------------------------------
@@ -1438,6 +1491,11 @@ if (getCurrentScope()) {
                     >
                       <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
                         <span class="truncate">{{ field.label }}</span>
+                        <span
+                          v-if="aliasFor(field.key)"
+                          class="shrink-0 rounded bg-primary/15 px-1 text-[10px] text-primary"
+                          :title="`Driven by the variable “${aliasFor(field.key)}”`"
+                        >{{ aliasFor(field.key) }}</span>
                         <UTooltip
                           :text="field.help"
                           :delay-duration="100"
@@ -1618,6 +1676,113 @@ if (getCurrentScope()) {
                         </dd>
                       </template>
                     </template>
+
+                    <dt class="col-span-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Transport
+                    </dt>
+
+                    <template
+                      v-for="field in transportFields"
+                      :key="field.key"
+                    >
+                      <dt class="flex min-w-0 items-center self-center text-muted">
+                        <span class="truncate">{{ field.label }}</span>
+                      </dt>
+                      <dd>
+                        <div class="flex items-center gap-1">
+                          <input
+                            :value="toMm(transport[field.key])"
+                            type="text"
+                            inputmode="decimal"
+                            class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                            :aria-label="`${field.label} in millimetres, 0 to skip the check`"
+                            @keydown.enter.prevent="commitTransportLimit(field.key, $event)"
+                            @blur="commitTransportLimit(field.key, $event)"
+                          >
+                          <span class="text-muted lowercase">mm</span>
+                        </div>
+                      </dd>
+                    </template>
+
+                    <dd class="col-span-2 -mt-1 text-[11px] text-dimmed">
+                      0 skips the check. The assembled piece may be rotated to fit.
+                    </dd>
+
+                    <dt class="col-span-2 flex items-center justify-between pt-3">
+                      <span class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">Variables</span>
+                      <UButton
+                        icon="i-lucide-plus"
+                        label="Add"
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        aria-label="Add a project variable"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        @click="addVariable(props.ydoc)"
+                      />
+                    </dt>
+
+                    <dd
+                      v-if="variables.length === 0"
+                      class="col-span-2 text-dimmed"
+                    >
+                      No variables. A variable names a dimension and drives one or more fields below.
+                    </dd>
+
+                    <dd
+                      v-for="variable in variables"
+                      :key="variable.id"
+                      class="col-span-2 space-y-1.5 rounded-md bg-muted/40 p-2"
+                    >
+                      <div class="flex items-center gap-1.5">
+                        <input
+                          :value="variable.name"
+                          type="text"
+                          class="min-w-0 flex-1 rounded-md bg-muted px-2 py-1 text-xs text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                          aria-label="Variable name"
+                          @keydown.enter.prevent="commitVariableName(variable.id, $event)"
+                          @blur="commitVariableName(variable.id, $event)"
+                        >
+                        <input
+                          :value="toMm(variable.value)"
+                          type="text"
+                          inputmode="decimal"
+                          class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                          aria-label="Variable value in millimetres"
+                          @keydown.enter.prevent="commitVariableValue(variable.id, $event)"
+                          @blur="commitVariableValue(variable.id, $event)"
+                        >
+                        <span class="text-dimmed">mm</span>
+                        <UButton
+                          icon="i-lucide-trash-2"
+                          size="xs"
+                          color="error"
+                          variant="ghost"
+                          aria-label="Remove this variable"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="removeVariable(props.ydoc, variable.id)"
+                        />
+                      </div>
+                      <USelect
+                        :model-value="variable.bindings"
+                        :items="bindableFields"
+                        value-key="value"
+                        label-key="label"
+                        multiple
+                        size="xs"
+                        class="w-full"
+                        placeholder="Drives…"
+                        aria-label="Fields this variable drives"
+                        @update:model-value="updateVariable(props.ydoc, variable.id, { bindings: $event as never })"
+                      />
+                    </dd>
+
+                    <dd
+                      v-if="bindingConflicts.length > 0"
+                      class="col-span-2 text-warning"
+                    >
+                      More than one variable drives {{ bindingConflicts.length }} field(s); the last one listed wins.
+                    </dd>
 
                     <dt class="col-span-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
                       Construction

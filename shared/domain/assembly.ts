@@ -16,6 +16,7 @@ import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
 import { drillingOperationsForPanel } from '~~/shared/domain/drilling'
 import { applyJoinery } from '~~/shared/domain/joinery'
 import { compileFreePanels } from '~~/shared/domain/free-panels'
+import { applyVariables } from '~~/shared/domain/variables'
 import {
   type OutlineMap,
   type PanelOutline,
@@ -814,7 +815,11 @@ function normalizePanel(panel: CompiledPanel, yOffset: number): CompiledPanel {
 }
 
 export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOptions = {}): CompiledAssembly {
-  const config = furnitureDoc.config
+  // Variables drive config fields one way, so resolving them up front means
+  // every downstream calculation sees the same numbers.
+  const config = furnitureDoc.variables?.length
+    ? applyVariables(furnitureDoc.config, furnitureDoc.variables)
+    : furnitureDoc.config
   const columns = furnitureDoc.columns
   const totalWidth = columns.reduce((sum, column) => sum + column.width, 0)
 

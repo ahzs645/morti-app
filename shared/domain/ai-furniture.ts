@@ -10,6 +10,7 @@ import { defaultDrillingMap } from './drilling'
 import { DEFAULT_JOINERY_SETTINGS } from './joinery'
 import { defaultRouterProfileMap } from './router-profiles'
 import { defaultOutlineMap } from './outline'
+import { DEFAULT_TRANSPORT_LIMITS } from './occupied-space'
 import { defaultPanelAttributeMap } from './panel-attributes'
 import {
   DESIGN_SCHEMA_VERSION,
@@ -134,6 +135,8 @@ function cloneDraft(draft: AiFurnitureDraft): AiFurnitureDraft {
       routerProfiles: draft.doc.routerProfiles,
       freePanels: draft.doc.freePanels.map(panel => ({ ...panel })),
       outlines: draft.doc.outlines,
+      variables: draft.doc.variables.map(v => ({ ...v })),
+      transport: { ...draft.doc.transport },
       columns: draft.doc.columns.map(column => ({
         width: column.width,
         modules: column.modules.map(module => ({ ...module })),
@@ -369,6 +372,8 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
     routerProfiles: defaultRouterProfileMap(),
     freePanels: [],
     outlines: defaultOutlineMap(),
+    variables: [],
+    transport: { ...DEFAULT_TRANSPORT_LIMITS },
     config,
     columns,
   }
@@ -395,6 +400,8 @@ function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, curren
       routerProfiles: defaultRouterProfileMap(),
       freePanels: [],
       outlines: defaultOutlineMap(),
+      variables: [],
+      transport: { ...DEFAULT_TRANSPORT_LIMITS },
       config,
       columns,
     },
@@ -426,6 +433,8 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
       routerProfiles: defaultRouterProfileMap(),
       freePanels: [],
       outlines: defaultOutlineMap(),
+      variables: [],
+      transport: { ...DEFAULT_TRANSPORT_LIMITS },
       config,
       columns,
     },

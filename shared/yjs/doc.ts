@@ -76,6 +76,16 @@ import {
   sanitizeOutlineMap,
 } from '~~/shared/domain/outline'
 import {
+  type ProjectVariable,
+  MAX_VARIABLES,
+  defaultVariable,
+  sanitizeVariables,
+} from '~~/shared/domain/variables'
+import {
+  type TransportLimits,
+  DEFAULT_TRANSPORT_LIMITS,
+} from '~~/shared/domain/occupied-space'
+import {
   DESIGN_SCHEMA_VERSION,
   PROJECT_SETTINGS_KEYS,
   type FurnitureColumn,
@@ -113,6 +123,14 @@ export const MIGRATIONS: { id: string, run(map: Y.Map<unknown>): void }[] = [
     id: '1740000002000_free_panel_layer',
     run(map) {
       if (!map.has('freePanels')) map.set('freePanels', new Y.Array<unknown>())
+    if (!map.has('variables')) map.set('variables', new Y.Array<unknown>())
+    // Transport limits default to 0 = unchecked, so nothing is flagged until
+    // the user actually states a door width or a van length.
+    if (!map.has('transport')) {
+      const transport = new Y.Map<unknown>()
+      for (const key of TRANSPORT_KEYS) transport.set(key, DEFAULT_TRANSPORT_LIMITS[key])
+      map.set('transport', transport)
+    }
     },
   },
 ]
@@ -244,6 +262,37 @@ function writeRouterProfile(target: Y.Map<unknown>, role: string, profile: Route
   // Stored as plain JSON: a profile is picked as a unit, so per-field CRDT
   // merge would only ever produce combinations nobody chose.
   target.set(role, JSON.parse(JSON.stringify(profile)) as unknown)
+}
+
+const TRANSPORT_KEYS: (keyof TransportLimits)[] = ['width', 'height', 'length']
+
+function readVariables(map: Y.Map<unknown>): ProjectVariable[] {
+  const variables = map.get('variables') as Y.Array<unknown> | undefined
+  return variables ? sanitizeVariables(variables.toArray()) : []
+}
+
+function writeVariables(map: Y.Map<unknown>, variables: ProjectVariable[]) {
+  let array = map.get('variables') as Y.Array<unknown> | undefined
+  if (!array) {
+    array = new Y.Array<unknown>()
+    map.set('variables', array)
+  }
+  if (array.length > 0) array.delete(0, array.length)
+  const capped = variables.slice(0, MAX_VARIABLES)
+  if (capped.length > 0) array.insert(0, capped.map(v => JSON.parse(JSON.stringify(v)) as unknown))
+}
+
+function readTransport(map: Y.Map<unknown>): TransportLimits {
+  const transport = map.get('transport') as Y.Map<unknown> | undefined
+  if (!transport) return { ...DEFAULT_TRANSPORT_LIMITS }
+  const clean = { ...DEFAULT_TRANSPORT_LIMITS }
+  for (const key of TRANSPORT_KEYS) {
+    const value = transport.get(key)
+    clean[key] = typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? Math.min(50, Math.round(value * 1_000_000) / 1_000_000)
+      : 0
+  }
+  return clean
 }
 
 /** Read the `outlines` branch as a POJO, filling any gap with defaults. */
@@ -381,6 +430,14 @@ export function ensureInitialized(doc: Y.Doc) {
       for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, clean[role])
     }
     if (!map.has('freePanels')) map.set('freePanels', new Y.Array<unknown>())
+    if (!map.has('variables')) map.set('variables', new Y.Array<unknown>())
+    // Transport limits default to 0 = unchecked, so nothing is flagged until
+    // the user actually states a door width or a van length.
+    if (!map.has('transport')) {
+      const transport = new Y.Map<unknown>()
+      for (const key of TRANSPORT_KEYS) transport.set(key, DEFAULT_TRANSPORT_LIMITS[key])
+      map.set('transport', transport)
+    }
     // Outlines default to `rectangle`, which keeps every panel on the box path.
     if (!map.has('outlines')) {
       const outlines = new Y.Map<unknown>()
@@ -553,6 +610,8 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     routerProfiles: readRouterProfiles(map),
     freePanels: readFreePanels(map),
     outlines: readOutlines(map),
+    variables: readVariables(map),
+    transport: readTransport(map),
     columns,
   }
 }
@@ -766,6 +825,43 @@ export function updateDrillingRule(doc: Y.Doc, role: string, ruleId: string, pat
     )
     writeDrillingRules(drilling, role, sanitizeDrillingMap({ [role]: next })[role as keyof DrillingMap])
   }, 'updateDrillingRule')
+}
+
+// ---------------- Variables & transport ----------------
+
+export function addVariable(doc: Y.Doc): string {
+  const id = cryptoRandomId()
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    writeVariables(map, [...readVariables(map), defaultVariable(id)])
+  }, 'addVariable')
+  return id
+}
+
+export function removeVariable(doc: Y.Doc, id: string) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    writeVariables(map, readVariables(map).filter(v => v.id !== id))
+  }, 'removeVariable')
+}
+
+export function updateVariable(doc: Y.Doc, id: string, patch: Partial<ProjectVariable>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    writeVariables(map, readVariables(map).map(v => (v.id === id ? { ...v, ...patch } : v)))
+  }, 'updateVariable')
+}
+
+export function setTransportLimit(doc: Y.Doc, key: keyof TransportLimits, value: number) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let transport = map.get('transport') as Y.Map<unknown> | undefined
+    if (!transport) {
+      transport = new Y.Map<unknown>()
+      map.set('transport', transport)
+    }
+    transport.set(key, Number.isFinite(value) && value >= 0 ? Math.min(50, value) : 0)
+  }, 'setTransportLimit')
 }
 
 export function setPanelOutline(doc: Y.Doc, role: string, patch: Partial<PanelOutline>) {

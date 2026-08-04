@@ -3,6 +3,8 @@ import type { JoinerySettings } from './joinery'
 import type { RouterProfileMap } from './router-profiles'
 import type { FreePanel } from './free-panels'
 import type { OutlineMap } from './outline'
+import type { ProjectVariable } from './variables'
+import type { TransportLimits } from './occupied-space'
 import type { PanelAttributeMap } from './panel-attributes'
 import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
 
@@ -111,6 +113,10 @@ export interface FurnitureDoc {
   freePanels: FreePanel[]
   /** Non-rectangular panel outlines, keyed by `PanelRole`. */
   outlines: OutlineMap
+  /** Named variables driving config fields. */
+  variables: ProjectVariable[]
+  /** Door/van limits the assembled piece is checked against. */
+  transport: TransportLimits
   columns: FurnitureColumn[]
 }
 

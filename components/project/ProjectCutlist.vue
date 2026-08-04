@@ -17,6 +17,7 @@ import { computeBandList, edgeBandSummary } from '~~/shared/domain/edgeband'
 import { GRAIN_DIRECTION_CODE, attributesForRole } from '~~/shared/domain/panel-attributes'
 import { defaultRouterProfile, routerProfileSummary } from '~~/shared/domain/router-profiles'
 import { defaultOutline, outlineSummary } from '~~/shared/domain/outline'
+import { checkTransportFit, computeOccupiedSpace } from '~~/shared/domain/occupied-space'
 import { DEFAULT_PUBLIC_STYLE } from '~~/shared/domain/defaults'
 import type { CompiledPanel, PanelRole, PublicStyle } from '~~/shared/domain/types'
 import {
@@ -280,6 +281,9 @@ const bandList = computed(() =>
   ),
 )
 
+const occupied = computed(() => computeOccupiedSpace(compiled.value.panels))
+const transportFit = computed(() => checkTransportFit(occupied.value, snapshot.value.transport))
+
 const totals = computed(() => costing.value.totals)
 
 /** Base 7 columns plus whichever of material/weight/cost the project reports. */
@@ -306,6 +310,15 @@ const summary = computed(() => {
   ]
   if (s.reportWeight) items.push({ label: `Weight (${WEIGHT_UNIT_SYMBOL[s.weightUnit]})`, value: formatWeight(t.weightKg, s.weightUnit) })
   if (s.reportCost) items.push({ label: 'Material cost', value: formatMoney(t.cost, s.currency) })
+  // showOccupiedSpace: the overall size of the assembled piece.
+  const space = occupied.value
+  const lengthOptions = { precision: s.lengthPrecision, denominator: s.fractionDenominator }
+  items.push({
+    label: `Occupied space (${LENGTH_UNIT_SYMBOL[s.lengthUnit]})`,
+    value: [space.size.x, space.size.y, space.size.z]
+      .map(value => formatLength(value, s.lengthUnit, lengthOptions))
+      .join(' × '),
+  })
   return items
 })
 
@@ -524,6 +537,14 @@ function stop() {}
         </tbody>
       </table>
       </div>
+
+      <p
+        v-if="panelRows.length > 0 && !transportFit.unchecked && !transportFit.fitsAssembled"
+        class="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning"
+      >
+        Assembled, this piece exceeds the {{ transportFit.exceeded.join(' and ') }} you set for transport.
+        It will need to travel knocked down.
+      </p>
 
       <dl
         v-if="panelRows.length > 0"
