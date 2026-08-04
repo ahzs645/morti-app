@@ -3,6 +3,7 @@ import type { FurnitureColumn, FurnitureConfig, FurnitureModule } from '~~/share
 import type { FreePanel } from '~~/shared/domain/free-panels'
 import { type OutlineMap, outlineProfile } from '~~/shared/domain/outline'
 import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
+import { frameMemberOffsets } from '~~/shared/domain/frame'
 
 interface Props {
   columns: FurnitureColumn[]
@@ -297,35 +298,46 @@ function frameStileCount(mod: FurnitureModule): number {
   return Math.max(0, Math.min(8, Math.round((mod.frameStileCount as number) || 0)))
 }
 
-/** Member width in px, clamped the same way the compiler clamps it. */
-function frameMemberPx(columnWidth: number, mod: FurnitureModule): number {
-  const member = Math.min(FRAME_MEMBER_WIDTH, Math.max(0.001, Math.min(columnWidth, mod.height) / 3))
-  return Math.max(1, Math.round(member * pxPerMeter.value))
+/** Member size in metres, clamped the same way the compiler clamps it. */
+function frameMemberMeters(columnWidth: number, mod: FurnitureModule): number {
+  return Math.min(FRAME_MEMBER_WIDTH, Math.max(0.001, Math.min(columnWidth, mod.height) / 3))
 }
 
-/** Outer stiles hug the sides; interior ones space evenly between them. */
+/** Member width in px, clamped the same way the compiler clamps it. */
+function frameMemberPx(columnWidth: number, mod: FurnitureModule): number {
+  return Math.max(1, Math.round(frameMemberMeters(columnWidth, mod) * pxPerMeter.value))
+}
+
+/**
+ * The module button carries the column's padding, so its width is not the
+ * column width. Positions are therefore expressed as a fraction of the
+ * button's own box — which is exactly what a CSS percentage resolves against —
+ * rather than converted through a pixel width the button does not have.
+ */
+function frameOffsetFractions(span: number, member: number, interior: number): number[] {
+  return frameMemberOffsets(1, span > 0 ? member / span : 0, interior)
+}
+
+/** Outer stiles hug the sides; interior ones leave equal openings between them. */
 function frameStileStyle(columnWidth: number, mod: FurnitureModule, index: number): Record<string, string> {
   const member = frameMemberPx(columnWidth, mod)
-  const width = Math.round(columnWidth * pxPerMeter.value)
   if (index === 0) return { left: '0px', width: `${member}px` }
   if (index === 1) return { right: '0px', width: `${member}px` }
-  const interior = frameStileCount(mod)
-  const t = (index - 1) / (interior + 1)
-  const centre = member + (width - 2 * member) * t
-  return { left: `${Math.round(centre - member / 2)}px`, width: `${member}px` }
+  const buttonWidth = Math.max(0.001, columnWidth - (2 * qt) / pxPerMeter.value)
+  const fractions = frameOffsetFractions(buttonWidth, frameMemberMeters(columnWidth, mod), frameStileCount(mod))
+  const fraction = fractions[index - 1] ?? 0.5
+  return { left: `calc(${fraction * 100}% - ${member / 2}px)`, width: `${member}px` }
 }
 
 /** Rails span between the outer stiles, so the frame reads as a joined grid. */
 function frameRailStyle(columnWidth: number, mod: FurnitureModule, index: number): Record<string, string> {
   const member = frameMemberPx(columnWidth, mod)
-  const height = Math.round(mod.height * pxPerMeter.value)
   const inset = { left: `${member}px`, right: `${member}px` }
   if (index === 0) return { ...inset, bottom: '0px', height: `${member}px` }
   if (index === 1) return { ...inset, top: '0px', height: `${member}px` }
-  const interior = frameRailCount(mod)
-  const t = (index - 1) / (interior + 1)
-  const centre = member + (height - 2 * member) * t
-  return { ...inset, bottom: `${Math.round(centre - member / 2)}px`, height: `${member}px` }
+  const fractions = frameOffsetFractions(mod.height, frameMemberMeters(columnWidth, mod), frameRailCount(mod))
+  const fraction = fractions[index - 1] ?? 0.5
+  return { ...inset, bottom: `calc(${fraction * 100}% - ${member / 2}px)`, height: `${member}px` }
 }
 
 function spacerStyle(axis: 'width' | 'height'): Record<string, string> {
@@ -474,6 +486,15 @@ function boundaryHeightPx(boundaryIndex: number): string {
 // be scaled straight to pixels. Walking the same accumulation the flex layout
 // produces keeps the overlay locked to the columns at any zoom.
 
+/**
+ * Where world Y = 0 lands, in pixels above the rail body's bottom edge. The
+ * column stack is bottom-aligned but sits on its own padding, the bottom
+ * spacer, and the flex gap above it — measure from the rail bottom and a free
+ * panel reads a dozen pixels low, close enough to the carcass top to merge
+ * with it.
+ */
+const FLOOR_OFFSET_PX = qt + We + Ke
+
 /** Pixels from the rail body's left edge for a world X, in metres (0 = centre). */
 function pxForWorldX(x: number): number {
   const half = totalColumnWidthMeters.value / 2
@@ -496,7 +517,7 @@ function pxForWorldX(x: number): number {
 function freePanelStyle(panel: FreePanel): Record<string, string> {
   const left = pxForWorldX(panel.position.x - panel.size.x / 2)
   const right = pxForWorldX(panel.position.x + panel.size.x / 2)
-  const bottom = (panel.position.y - panel.size.y / 2) * pxPerMeter.value
+  const bottom = FLOOR_OFFSET_PX + (panel.position.y - panel.size.y / 2) * pxPerMeter.value
   return {
     left: `${Math.round(left)}px`,
     width: `${Math.max(1, Math.round(right - left))}px`,
@@ -548,7 +569,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
               <div
                 v-for="panel in freePanels"
                 :key="`free-${panel.id}`"
-                class="pointer-events-none absolute z-10 rounded-[2px] bg-primary shadow-sm"
+                class="pointer-events-none absolute z-0 rounded-[2px] bg-primary shadow-sm"
                 :style="freePanelStyle(panel)"
                 :aria-label="`Free panel ${panel.label}`"
               />

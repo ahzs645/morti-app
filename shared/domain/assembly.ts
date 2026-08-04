@@ -13,6 +13,7 @@ import type {
 } from '~~/shared/domain/types'
 import { effectiveDepth, isHoleOperation } from '~~/shared/domain/operations'
 import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
+import { frameMemberOffsets } from '~~/shared/domain/frame'
 import { drillingOperationsForPanel } from '~~/shared/domain/drilling'
 import { applyJoinery } from '~~/shared/domain/joinery'
 import { compileFreePanels } from '~~/shared/domain/free-panels'
@@ -751,20 +752,18 @@ function compileFrame(module: FurnitureModule, cell: CompiledCellBounds, config:
   panels.push(rail(`frame-rail:${module.id}:top`, topY, railSpan))
   panels.push(rail(`frame-rail:${module.id}:bottom`, bottomY, railSpan))
 
+  // `frameMemberOffsets` returns the outer members too; those are already
+  // placed above, so only the interior slice is used here.
   const extraRails = Math.max(0, Math.min(8, Math.floor(module.frameRailCount ?? 0)))
-  const innerHeight = bottomY + memberWidth / 2
-  const innerTop = topY - memberWidth / 2
-  for (let index = 0; index < extraRails; index++) {
-    const t = (index + 1) / (extraRails + 1)
-    panels.push(rail(`frame-rail:${module.id}:${index}`, innerHeight + (innerTop - innerHeight) * t, railSpan))
+  const railOffsets = frameMemberOffsets(height, memberWidth, extraRails).slice(1, -1)
+  for (const [index, offset] of railOffsets.entries()) {
+    panels.push(rail(`frame-rail:${module.id}:${index}`, centerY - height / 2 + offset, railSpan))
   }
 
   const extraStiles = Math.max(0, Math.min(8, Math.floor(module.frameStileCount ?? 0)))
-  const innerLeft = leftX + memberWidth / 2
-  const innerRight = rightX - memberWidth / 2
-  for (let index = 0; index < extraStiles; index++) {
-    const t = (index + 1) / (extraStiles + 1)
-    panels.push(stile(`frame-stile:${module.id}:${index}`, innerLeft + (innerRight - innerLeft) * t))
+  const stileOffsets = frameMemberOffsets(width, memberWidth, extraStiles).slice(1, -1)
+  for (const [index, offset] of stileOffsets.entries()) {
+    panels.push(stile(`frame-stile:${module.id}:${index}`, centerX - width / 2 + offset))
   }
 
   return { panels, operations: [] as PanelOperation[] }
