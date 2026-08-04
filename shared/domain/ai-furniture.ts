@@ -6,6 +6,7 @@ import {
   cryptoRandomId,
   snapConfig,
 } from './defaults'
+import { defaultDrillingMap } from './drilling'
 import { defaultPanelAttributeMap } from './panel-attributes'
 import {
   DESIGN_SCHEMA_VERSION,
@@ -125,6 +126,7 @@ function cloneDraft(draft: AiFurnitureDraft): AiFurnitureDraft {
       config: { ...draft.doc.config },
       settings: { ...draft.doc.settings },
       panelAttributes: draft.doc.panelAttributes,
+      drilling: draft.doc.drilling,
       columns: draft.doc.columns.map(column => ({
         width: column.width,
         modules: column.modules.map(module => ({ ...module })),
@@ -355,6 +357,7 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
     lastAppliedMigrationId: null,
     settings: { ...DEFAULT_PROJECT_SETTINGS },
     panelAttributes: defaultPanelAttributeMap(),
+    drilling: defaultDrillingMap(),
     config,
     columns,
   }
@@ -376,6 +379,7 @@ function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, curren
       lastAppliedMigrationId: null,
       settings: { ...DEFAULT_PROJECT_SETTINGS },
       panelAttributes: defaultPanelAttributeMap(),
+      drilling: defaultDrillingMap(),
       config,
       columns,
     },
@@ -402,6 +406,7 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
       lastAppliedMigrationId: null,
       settings: { ...DEFAULT_PROJECT_SETTINGS },
       panelAttributes: defaultPanelAttributeMap(),
+      drilling: defaultDrillingMap(),
       config,
       columns,
     },

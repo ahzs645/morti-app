@@ -1,3 +1,4 @@
+import type { DrillingMap } from './drilling'
 import type { PanelAttributeMap } from './panel-attributes'
 import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
 
@@ -94,6 +95,8 @@ export interface FurnitureDoc {
   settings: ProjectSettings
   /** Grain direction and edge banding, keyed by `PanelRole`. */
   panelAttributes: PanelAttributeMap
+  /** Drilling rules re-applied on every compile, keyed by `PanelRole`. */
+  drilling: DrillingMap
   columns: FurnitureColumn[]
 }
 
@@ -212,7 +215,56 @@ export type PanelRole =
   | 'drawer-back'
   | 'drawer-bottom'
 
-export type OperationType = 'through-hole' | 'rail-cut'
+/**
+ * Machining operations subtracted from a panel.
+ *
+ * `through-hole` and `rail-cut` are Morti's originals. The rest port
+ * Woodworking's drilling and fixture toolbars: `drillHoles`,
+ * `drillCountersinks`, `drillCounterbores`, `drillCounterbores2x`,
+ * `magicDriller`, `magicDowels`, `magicCNC`, `magicFixture`, and the
+ * groove/dado/rabbet cuts `magicCut` and `magicKnife` make.
+ */
+export type OperationType =
+  | 'through-hole'
+  | 'rail-cut'
+  /** Blind hole for a dowel, shelf pin, or cam bolt. */
+  | 'dowel-hole'
+  /** Conical seat so a flat-head screw sits flush. */
+  | 'countersink'
+  /** Flat-bottomed recess so a screw head or cam sits below the surface. */
+  | 'counterbore'
+  /** Flat-bottomed CNC pocket of arbitrary size. */
+  | 'pocket'
+  /** Slot cut along the grain, e.g. for a back panel. */
+  | 'groove'
+  /** Slot cut across the grain, e.g. to seat a shelf. */
+  | 'dado'
+  /** Step cut along a panel edge. */
+  | 'rabbet'
+
+export const OPERATION_TYPES: OperationType[] = [
+  'through-hole',
+  'rail-cut',
+  'dowel-hole',
+  'countersink',
+  'counterbore',
+  'pocket',
+  'groove',
+  'dado',
+  'rabbet',
+]
+
+export const OPERATION_TYPE_LABEL: Record<OperationType, string> = {
+  'through-hole': 'Through hole',
+  'rail-cut': 'Rail cut',
+  'dowel-hole': 'Dowel hole',
+  'countersink': 'Countersink',
+  'counterbore': 'Counterbore',
+  'pocket': 'Pocket',
+  'groove': 'Groove',
+  'dado': 'Dado',
+  'rabbet': 'Rabbet',
+}
 
 export interface PanelOperation {
   id: string
@@ -220,13 +272,17 @@ export interface PanelOperation {
   targetPanelKey: string
   face?: 'front' | 'back'
   center?: { x: number, y: number }
-  // through-hole
+  // through-hole / dowel-hole / countersink / counterbore
   cx?: number
   cy?: number
   diameter?: number
   depth?: number
   through?: boolean
-  // rail-cut
+  /** Countersink/counterbore only: the wider head recess diameter. */
+  headDiameter?: number
+  /** Counterbore only: how deep the head recess goes. */
+  headDepth?: number
+  // rail-cut / pocket / groove / dado / rabbet
   x?: number
   y?: number
   width?: number
@@ -234,6 +290,8 @@ export interface PanelOperation {
   length?: number
   rotation?: number
   sourceModuleId?: string
+  /** Hardware code this operation exists to seat, for the BOM. */
+  hardwareCode?: string
 }
 
 export interface CompiledPanel {
@@ -278,6 +336,9 @@ export interface HardwareSpec {
     | 'drawer-slide-left'
     | 'back-panel-clip'
     | 'adhesive-bottom-pad'
+    | 'confirmat-screw'
+    | 'pocket-screw'
+    | 'shelf-pin'
   name: string
   unit: 'piece'
   diameterMm?: number

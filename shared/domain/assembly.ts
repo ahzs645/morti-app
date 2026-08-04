@@ -11,6 +11,8 @@ import type {
   PanelOperation,
   PanelRole,
 } from '~~/shared/domain/types'
+import { effectiveDepth, isHoleOperation } from '~~/shared/domain/operations'
+import { drillingOperationsForPanel } from '~~/shared/domain/drilling'
 
 // ---------------------------------------------------------------------------
 // Tunables (mirrors Dt_x5Iy5.js module-level constants)
@@ -807,6 +809,16 @@ export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOption
   }
 
   const normalizedPanels = panels.map(panel => normalizePanel(panel, config.sidePanelOverhang))
+
+  // Drilling rules are re-applied on every compile, against the *normalized*
+  // panel sizes, so a pattern anchored to an edge follows the panel as the
+  // design changes rather than baking in the size it was authored at.
+  if (furnitureDoc.drilling) {
+    for (const panel of normalizedPanels) {
+      operations.push(...drillingOperationsForPanel(panel.key, panel.role, panel, furnitureDoc.drilling))
+    }
+  }
+
   const normalizedOperations = operations.map(normalizeOperation)
   const normalizedPanelMap = new Map(normalizedPanels.map(panel => [panel.key, panel]))
   for (const operation of normalizedOperations) {
@@ -869,24 +881,88 @@ export function compilePartGeometry(
   brushAccum.updateMatrixWorld()
 
   const evaluator = getEvaluator()
-  const holes = operations.filter(
-    o =>
-      o.operationType === 'through-hole'
-      && o.targetPanelKey === panel.key
-      && (o.diameter ?? 0) > 0,
-  )
+  const mine = operations.filter(o => o.targetPanelKey === panel.key)
 
-  if (holes.length > 0) {
-    const cylHeight = t * 1.35 + PULL_HOLE_DEPTH_PADDING * 2
-    for (const op of holes) {
+  /** Subtract a cutter and dispose it. */
+  const cut = (geometry: THREE.BufferGeometry) => {
+    const cutBrush = new Brush(geometry)
+    cutBrush.updateMatrixWorld()
+    brushAccum = evaluator.evaluate(brushAccum, cutBrush, SUBTRACTION) as Brush
+    geometry.dispose()
+  }
+
+  // Blind features are cut from the face they are drilled into; `front` is +Z.
+  const faceSign = (op: PanelOperation) => (op.face === 'back' ? -1 : 1)
+  const OVERSHOOT = PULL_HOLE_DEPTH_PADDING * 2
+
+  /**
+   * Centre a blind cutter of height `depth + OVERSHOOT` so it starts flush
+   * with the drilled face and bottoms out exactly `depth` into the panel.
+   * Front face sits at +t/2, back at -t/2.
+   */
+  const blindCutterZ = (depth: number, sign: number) => sign * (t / 2 + OVERSHOOT / 2 - depth / 2)
+
+  for (const op of mine) {
+    const ox = op.center?.x ?? op.cx ?? op.x ?? 0
+    const oy = op.center?.y ?? op.cy ?? op.y ?? 0
+    const sign = faceSign(op)
+
+    if (isHoleOperation(op) && (op.diameter ?? 0) > 0) {
       const r = Math.max(HOLE_MIN_DIAMETER / 2, (op.diameter ?? 0) / 2)
-      const cyl = new THREE.CylinderGeometry(r, r, cylHeight, 32)
-      cyl.rotateX(Math.PI / 2)
-      cyl.translate(op.center?.x ?? op.cx ?? 0, op.center?.y ?? op.cy ?? 0, 0)
-      const cutBrush = new Brush(cyl)
-      cutBrush.updateMatrixWorld()
-      brushAccum = evaluator.evaluate(brushAccum, cutBrush, SUBTRACTION) as Brush
-      cyl.dispose()
+      const depth = effectiveDepth(op, t)
+
+      if (depth == null) {
+        // Through: overshoot both faces so the boolean stays watertight.
+        const cyl = new THREE.CylinderGeometry(r, r, t * 1.35 + OVERSHOOT, 32)
+        cyl.rotateX(Math.PI / 2)
+        cyl.translate(ox, oy, 0)
+        cut(cyl)
+      }
+      else {
+        const cyl = new THREE.CylinderGeometry(r, r, depth + OVERSHOOT, 32)
+        cyl.rotateX(Math.PI / 2)
+        cyl.translate(ox, oy, blindCutterZ(depth, sign))
+        cut(cyl)
+      }
+
+      // Head recess: a cone for a countersink, a flat-bottomed bore otherwise.
+      const headRadius = Math.max(r, (op.headDiameter ?? 0) / 2)
+      if (op.operationType === 'countersink' && headRadius > r) {
+        // 82° included angle is the flat-head wood-screw standard.
+        const coneHeight = (headRadius - r) / Math.tan((82 / 2) * (Math.PI / 180))
+        const cone = new THREE.CylinderGeometry(headRadius, r, coneHeight, 32)
+        // After rotateX(+90°) the wide end faces +Z; flip it for a back-face
+        // countersink so the mouth still opens onto the drilled face.
+        cone.rotateX(sign > 0 ? Math.PI / 2 : -Math.PI / 2)
+        cone.translate(ox, oy, sign * (t / 2 - coneHeight / 2))
+        cut(cone)
+      }
+      else if (op.operationType === 'counterbore' && headRadius > r) {
+        const headDepth = Math.max(HOLE_MIN_DIAMETER, Math.min(t, op.headDepth ?? 0))
+        const bore = new THREE.CylinderGeometry(headRadius, headRadius, headDepth + OVERSHOOT, 32)
+        bore.rotateX(Math.PI / 2)
+        bore.translate(ox, oy, blindCutterZ(headDepth, sign))
+        cut(bore)
+      }
+      continue
+    }
+
+    // Pockets, grooves, dados, and rabbets all remove a rectangular prism from
+    // one face. `rail-cut` keeps its existing overlay-only treatment.
+    if (
+      op.operationType === 'pocket'
+      || op.operationType === 'groove'
+      || op.operationType === 'dado'
+      || op.operationType === 'rabbet'
+    ) {
+      const sw = Math.max(RAILCUT_MIN_SIZE, op.width ?? 0)
+      const sh = Math.max(RAILCUT_MIN_SIZE, op.height ?? 0)
+      const depth = effectiveDepth(op, t)
+      const through = depth == null
+      const boxCut = new THREE.BoxGeometry(sw, sh, through ? t * 1.35 + OVERSHOOT : depth + OVERSHOOT)
+      if (op.rotation) boxCut.rotateZ(op.rotation)
+      boxCut.translate(ox, oy, through ? 0 : blindCutterZ(depth, sign))
+      cut(boxCut)
     }
   }
 

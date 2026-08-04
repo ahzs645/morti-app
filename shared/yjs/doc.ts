@@ -29,6 +29,13 @@ import {
 } from '~~/shared/domain/panel-attributes'
 import { PANEL_EDGES } from '~~/shared/domain/edgeband'
 import {
+  type DrillingMap,
+  type DrillingRule,
+  defaultDrillingMap,
+  defaultDrillingRule,
+  sanitizeDrillingMap,
+} from '~~/shared/domain/drilling'
+import {
   DESIGN_SCHEMA_VERSION,
   PROJECT_SETTINGS_KEYS,
   type FurnitureColumn,
@@ -109,6 +116,32 @@ function writePanelAttributes(target: Y.Map<unknown>, role: string, value: Panel
   for (const edge of PANEL_EDGES) bands.set(edge, value.bands[edge])
 }
 
+/**
+ * Read the `drilling` branch as a POJO. Rules are stored as plain JSON inside
+ * a Y.Array per role: they are edited as a whole (add / remove / retune), never
+ * field-by-field by two people at once, so per-field CRDT merge buys nothing.
+ */
+function readDrillingMap(map: Y.Map<unknown>): DrillingMap {
+  const drilling = map.get('drilling') as Y.Map<unknown> | undefined
+  if (!drilling) return defaultDrillingMap()
+  const raw: Record<string, unknown> = {}
+  for (const role of ALL_PANEL_ROLES) {
+    const rules = drilling.get(role) as Y.Array<unknown> | undefined
+    if (rules) raw[role] = rules.toArray()
+  }
+  return sanitizeDrillingMap(raw)
+}
+
+function writeDrillingRules(target: Y.Map<unknown>, role: string, rules: DrillingRule[]) {
+  let array = target.get(role) as Y.Array<unknown> | undefined
+  if (!array) {
+    array = new Y.Array<unknown>()
+    target.set(role, array)
+  }
+  if (array.length > 0) array.delete(0, array.length)
+  if (rules.length > 0) array.insert(0, rules.map(rule => JSON.parse(JSON.stringify(rule)) as unknown))
+}
+
 /** Read the `settings` branch as a POJO, filling any gap with the default. */
 function readSettingsMap(map: Y.Map<unknown>): ProjectSettings {
   const settings = map.get('settings') as Y.Map<unknown> | undefined
@@ -169,6 +202,18 @@ export function ensureInitialized(doc: Y.Doc) {
       const attributes = map.get('panelAttributes') as Y.Map<unknown>
       const clean = readPanelAttributesMap(map)
       for (const role of ALL_PANEL_ROLES) writePanelAttributes(attributes, role, clean[role])
+    }
+    // Drilling is additive too — an old doc starts with no rules, which
+    // compiles to exactly the panels it produced before.
+    if (!map.has('drilling')) {
+      const drilling = new Y.Map<unknown>()
+      map.set('drilling', drilling)
+      for (const role of ALL_PANEL_ROLES) writeDrillingRules(drilling, role, [])
+    }
+    else {
+      const drilling = map.get('drilling') as Y.Map<unknown>
+      const clean = readDrillingMap(map)
+      for (const role of ALL_PANEL_ROLES) writeDrillingRules(drilling, role, clean[role])
     }
     runPendingMigrations(doc)
     if (!map.has('columns')) {
@@ -303,6 +348,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     config,
     settings: readSettingsMap(map),
     panelAttributes: readPanelAttributesMap(map),
+    drilling: readDrillingMap(map),
     columns,
   }
 }
@@ -453,6 +499,53 @@ export function setPanelAttributes(doc: Y.Doc, role: string, value: Partial<Pane
     const current = readPanelAttributesMap(map)[role as keyof PanelAttributeMap]
     writePanelAttributes(attributes, role, sanitizePanelAttributes({ ...current, ...value }))
   }, 'setPanelAttributes')
+}
+
+function drillingMapFor(doc: Y.Doc): { map: Y.Map<unknown>, drilling: Y.Map<unknown> } {
+  const map = getFurnitureMap(doc)
+  let drilling = map.get('drilling') as Y.Map<unknown> | undefined
+  if (!drilling) {
+    drilling = new Y.Map<unknown>()
+    map.set('drilling', drilling)
+  }
+  return { map, drilling }
+}
+
+export function addDrillingRule(doc: Y.Doc, role: string) {
+  doc.transact(() => {
+    const { map, drilling } = drillingMapFor(doc)
+    const rules = readDrillingMap(map)[role as keyof DrillingMap] ?? []
+    const next = [...rules, defaultDrillingRule(`${role}-${cryptoRandomId()}`)]
+    writeDrillingRules(drilling, role, next)
+  }, 'addDrillingRule')
+}
+
+export function removeDrillingRule(doc: Y.Doc, role: string, ruleId: string) {
+  doc.transact(() => {
+    const { map, drilling } = drillingMapFor(doc)
+    const rules = readDrillingMap(map)[role as keyof DrillingMap] ?? []
+    writeDrillingRules(drilling, role, rules.filter(rule => rule.id !== ruleId))
+  }, 'removeDrillingRule')
+}
+
+export function updateDrillingRule(doc: Y.Doc, role: string, ruleId: string, patch: Partial<DrillingRule>) {
+  doc.transact(() => {
+    const { map, drilling } = drillingMapFor(doc)
+    const rules = readDrillingMap(map)[role as keyof DrillingMap] ?? []
+    const next = rules.map(rule =>
+      rule.id === ruleId
+        ? { ...rule, ...patch, pattern: { ...rule.pattern, ...(patch.pattern ?? {}) } }
+        : rule,
+    )
+    writeDrillingRules(drilling, role, sanitizeDrillingMap({ [role]: next })[role as keyof DrillingMap])
+  }, 'updateDrillingRule')
+}
+
+export function resetDrilling(doc: Y.Doc) {
+  doc.transact(() => {
+    const { drilling } = drillingMapFor(doc)
+    for (const role of ALL_PANEL_ROLES) writeDrillingRules(drilling, role, [])
+  }, 'resetDrilling')
 }
 
 export function resetPanelAttributes(doc: Y.Doc) {

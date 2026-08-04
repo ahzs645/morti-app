@@ -17,6 +17,9 @@ import {
   PANEL_EDGE_LABEL,
   type PanelEdge,
 } from '~~/shared/domain/edgeband'
+import { DRILL_OPERATION_TYPES, type DrillingRule } from '~~/shared/domain/drilling'
+import { PATTERN_ANCHORS, PATTERN_KINDS } from '~~/shared/domain/operations'
+import { HARDWARE_CATALOG } from '~~/shared/domain/hardware-catalog'
 import {
   AREA_UNITS,
   FRACTION_DENOMINATORS,
@@ -41,8 +44,12 @@ import {
   setModuleType,
   setSettingValue,
   setPanelAttributes,
+  addDrillingRule,
+  removeDrillingRule,
+  updateDrillingRule,
   resetSettings,
   resetPanelAttributes,
+  resetDrilling,
 } from '~~/shared/yjs/doc'
 
 interface Props {
@@ -512,6 +519,73 @@ function setGrain(role: PanelRole, grain: GrainDirection) {
 function setBand(role: PanelRole, edge: PanelEdge, bandId: string) {
   const bands = { ...panelAttributesFor(role).bands, [edge]: bandId === BARE_EDGE_VALUE ? null : bandId }
   setPanelAttributes(props.ydoc, role, { bands })
+}
+
+// ---------------------------------------------------------------------------
+// Drilling (magicDriller, drillHoles, drillCountersinks, drillCounterbores)
+// ---------------------------------------------------------------------------
+
+const drillingOpen = ref(false)
+
+/** Sentinel for "no hardware" — USelect can't round-trip a null value key. */
+const NO_HARDWARE_VALUE = 'none'
+
+const drillOperationTypes = DRILL_OPERATION_TYPES
+const patternKinds = PATTERN_KINDS
+const patternAnchors = PATTERN_ANCHORS
+const drillFaces = [
+  { value: 'front' as const, label: 'Front face' },
+  { value: 'back' as const, label: 'Back face' },
+]
+const drillHardwareItems = [
+  { value: NO_HARDWARE_VALUE, label: 'None' },
+  ...HARDWARE_CATALOG.map(item => ({ value: item.code, label: `${item.code} — ${item.name}` })),
+]
+
+function drillingRulesFor(role: PanelRole): DrillingRule[] {
+  return snapshot.value.drilling[role] ?? []
+}
+
+/** Enabled rules across every role — shown as a count on the trigger button. */
+const activeDrillingRuleCount = computed(() =>
+  ALL_PANEL_ROLES.reduce((sum, role) => sum + drillingRulesFor(role).filter(rule => rule.enabled).length, 0),
+)
+
+function updateRule(role: PanelRole, ruleId: string, patch: Partial<DrillingRule>) {
+  updateDrillingRule(props.ydoc, role, ruleId, patch)
+}
+
+function updateRulePattern(role: PanelRole, ruleId: string, patch: Partial<DrillingRule['pattern']>) {
+  updateDrillingRule(props.ydoc, role, ruleId, { pattern: patch as DrillingRule['pattern'] })
+}
+
+/** Read a millimetre input and store it as metres. */
+function commitRuleMm(role: PanelRole, ruleId: string, key: 'diameter' | 'depth' | 'headDiameter' | 'headDepth', event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm) && mm >= 0) updateRule(role, ruleId, { [key]: mm / 1000 })
+  const rule = drillingRulesFor(role).find(r => r.id === ruleId)
+  if (rule) input.value = toMm(rule[key])
+}
+
+function commitPatternMm(role: PanelRole, ruleId: string, key: 'spacing' | 'inset' | 'offset', event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm)) updateRulePattern(role, ruleId, { [key]: mm / 1000 })
+  const rule = drillingRulesFor(role).find(r => r.id === ruleId)
+  if (rule) input.value = toMm(rule.pattern[key] ?? 0)
+}
+
+function commitPatternCount(role: PanelRole, ruleId: string, key: 'count' | 'rows', event: Event) {
+  const input = event.target as HTMLInputElement
+  const value = Number(input.value)
+  if (Number.isFinite(value)) updateRulePattern(role, ruleId, { [key]: Math.round(value) })
+  const rule = drillingRulesFor(role).find(r => r.id === ruleId)
+  if (rule) input.value = String(rule.pattern[key] ?? 1)
+}
+
+function toMm(metres: number): string {
+  return String(Math.round(metres * 10000) / 10)
 }
 
 function commitCurrency(event: Event) {
@@ -1385,6 +1459,284 @@ if (getCurrentScope()) {
                 aria-label="Open grain and edge banding settings"
                 @click="grainOpen = true"
               />
+
+              <UButton
+                icon="i-lucide-drill"
+                :label="activeDrillingRuleCount > 0 ? `Drilling (${activeDrillingRuleCount})` : 'Drilling'"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                block
+                class="justify-center active:scale-[0.97] transition-transform duration-150"
+                aria-label="Open drilling settings"
+                @click="drillingOpen = true"
+              />
+
+              <AppDialog
+                v-model:open="drillingOpen"
+                title="Drilling"
+                description="Hole patterns re-applied to every panel of a role on each compile, so they follow the design as it changes."
+              >
+                <div class="flex flex-wrap items-center justify-end gap-1 border-b border-default pb-3">
+                  <UButton
+                    icon="i-lucide-rotate-ccw"
+                    label="Clear all"
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    aria-label="Remove every drilling rule"
+                    class="active:scale-[0.97] transition-transform duration-150"
+                    @click="resetDrilling(props.ydoc)"
+                  />
+                </div>
+
+                <div class="max-h-[min(28rem,62vh)] space-y-3 overflow-y-auto pr-1 text-xs">
+                  <section
+                    v-for="role in ALL_PANEL_ROLES"
+                    :key="role"
+                    class="rounded-lg bg-muted/40 p-2.5"
+                  >
+                    <div class="mb-2 flex items-center justify-between gap-2">
+                      <h4 class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                        {{ PANEL_ROLE_LABEL[role] }}
+                      </h4>
+                      <UButton
+                        icon="i-lucide-plus"
+                        label="Add pattern"
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        :aria-label="`Add a drilling pattern to ${PANEL_ROLE_LABEL[role]}`"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        @click="addDrillingRule(props.ydoc, role)"
+                      />
+                    </div>
+
+                    <p
+                      v-if="drillingRulesFor(role).length === 0"
+                      class="text-dimmed"
+                    >
+                      No drilling on this part.
+                    </p>
+
+                    <article
+                      v-for="rule in drillingRulesFor(role)"
+                      :key="rule.id"
+                      class="mb-2 space-y-2 rounded-md bg-default p-2 last:mb-0"
+                    >
+                      <div class="flex flex-wrap items-center gap-2">
+                        <USwitch
+                          :model-value="rule.enabled"
+                          size="sm"
+                          :aria-label="`Enable this drilling pattern on ${PANEL_ROLE_LABEL[role]}`"
+                          @update:model-value="updateRule(role, rule.id, { enabled: $event })"
+                        />
+                        <USelect
+                          :model-value="rule.operationType"
+                          :items="drillOperationTypes"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          class="min-w-36 flex-1"
+                          aria-label="Hole type"
+                          @update:model-value="updateRule(role, rule.id, { operationType: $event as never })"
+                        />
+                        <UButton
+                          icon="i-lucide-trash-2"
+                          size="xs"
+                          color="error"
+                          variant="ghost"
+                          aria-label="Remove this drilling pattern"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="removeDrillingRule(props.ydoc, role, rule.id)"
+                        />
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                        <label class="flex items-center justify-between gap-2">
+                          <span class="text-muted">Ø</span>
+                          <span class="flex items-center gap-1">
+                            <input
+                              :value="toMm(rule.diameter)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              aria-label="Hole diameter in millimetres"
+                              @keydown.enter.prevent="commitRuleMm(role, rule.id, 'diameter', $event)"
+                              @blur="commitRuleMm(role, rule.id, 'diameter', $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </label>
+
+                        <label
+                          v-if="rule.operationType !== 'through-hole'"
+                          class="flex items-center justify-between gap-2"
+                        >
+                          <span class="text-muted">Depth</span>
+                          <span class="flex items-center gap-1">
+                            <input
+                              :value="toMm(rule.depth)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              aria-label="Hole depth in millimetres"
+                              @keydown.enter.prevent="commitRuleMm(role, rule.id, 'depth', $event)"
+                              @blur="commitRuleMm(role, rule.id, 'depth', $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </label>
+
+                        <template v-if="rule.operationType === 'countersink' || rule.operationType === 'counterbore'">
+                          <label class="flex items-center justify-between gap-2">
+                            <span class="text-muted">Head Ø</span>
+                            <span class="flex items-center gap-1">
+                              <input
+                                :value="toMm(rule.headDiameter)"
+                                type="text"
+                                inputmode="decimal"
+                                class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                                aria-label="Head recess diameter in millimetres"
+                                @keydown.enter.prevent="commitRuleMm(role, rule.id, 'headDiameter', $event)"
+                                @blur="commitRuleMm(role, rule.id, 'headDiameter', $event)"
+                              >
+                              <span class="text-dimmed">mm</span>
+                            </span>
+                          </label>
+                          <label
+                            v-if="rule.operationType === 'counterbore'"
+                            class="flex items-center justify-between gap-2"
+                          >
+                            <span class="text-muted">Head depth</span>
+                            <span class="flex items-center gap-1">
+                              <input
+                                :value="toMm(rule.headDepth)"
+                                type="text"
+                                inputmode="decimal"
+                                class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                                aria-label="Head recess depth in millimetres"
+                                @keydown.enter.prevent="commitRuleMm(role, rule.id, 'headDepth', $event)"
+                                @blur="commitRuleMm(role, rule.id, 'headDepth', $event)"
+                              >
+                              <span class="text-dimmed">mm</span>
+                            </span>
+                          </label>
+                        </template>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                        <USelect
+                          :model-value="rule.pattern.kind"
+                          :items="patternKinds"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          aria-label="Pattern kind"
+                          @update:model-value="updateRulePattern(role, rule.id, { kind: $event as never })"
+                        />
+                        <USelect
+                          :model-value="rule.pattern.anchor"
+                          :items="patternAnchors"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          aria-label="Pattern anchor edge"
+                          @update:model-value="updateRulePattern(role, rule.id, { anchor: $event as never })"
+                        />
+                        <USelect
+                          :model-value="rule.face"
+                          :items="drillFaces"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          aria-label="Face drilled from"
+                          @update:model-value="updateRule(role, rule.id, { face: $event as never })"
+                        />
+                        <USelect
+                          :model-value="rule.hardwareCode ?? NO_HARDWARE_VALUE"
+                          :items="drillHardwareItems"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          aria-label="Hardware seated by this drilling"
+                          @update:model-value="updateRule(role, rule.id, { hardwareCode: $event === NO_HARDWARE_VALUE ? null : String($event) })"
+                        />
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                        <label class="flex items-center justify-between gap-2">
+                          <span class="text-muted">Count</span>
+                          <input
+                            :value="rule.pattern.count"
+                            type="text"
+                            inputmode="numeric"
+                            class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                            aria-label="Holes along the pattern"
+                            @keydown.enter.prevent="commitPatternCount(role, rule.id, 'count', $event)"
+                            @blur="commitPatternCount(role, rule.id, 'count', $event)"
+                          >
+                        </label>
+                        <label
+                          v-if="rule.pattern.kind === 'grid'"
+                          class="flex items-center justify-between gap-2"
+                        >
+                          <span class="text-muted">Rows</span>
+                          <input
+                            :value="rule.pattern.rows"
+                            type="text"
+                            inputmode="numeric"
+                            class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                            aria-label="Rows of holes"
+                            @keydown.enter.prevent="commitPatternCount(role, rule.id, 'rows', $event)"
+                            @blur="commitPatternCount(role, rule.id, 'rows', $event)"
+                          >
+                        </label>
+                        <label class="flex items-center justify-between gap-2">
+                          <span class="text-muted">Spacing</span>
+                          <span class="flex items-center gap-1">
+                            <input
+                              :value="toMm(rule.pattern.spacing)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              aria-label="Centre-to-centre spacing in millimetres"
+                              @keydown.enter.prevent="commitPatternMm(role, rule.id, 'spacing', $event)"
+                              @blur="commitPatternMm(role, rule.id, 'spacing', $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </label>
+                        <label class="flex items-center justify-between gap-2">
+                          <span class="text-muted">Inset</span>
+                          <span class="flex items-center gap-1">
+                            <input
+                              :value="toMm(rule.pattern.inset)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              aria-label="Inset from the anchor edge in millimetres"
+                              @keydown.enter.prevent="commitPatternMm(role, rule.id, 'inset', $event)"
+                              @blur="commitPatternMm(role, rule.id, 'inset', $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </label>
+                      </div>
+                    </article>
+                  </section>
+                </div>
+
+                <template #footer="{ close }">
+                  <UButton
+                    label="Done"
+                    color="neutral"
+                    variant="outline"
+                    class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
+                    @click="close()"
+                  />
+                </template>
+              </AppDialog>
             </div>
           </div>
         </div>
