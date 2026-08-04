@@ -1,5 +1,6 @@
 import type { DrillingMap } from './drilling'
 import type { JoinerySettings } from './joinery'
+import type { RouterProfileMap } from './router-profiles'
 import type { PanelAttributeMap } from './panel-attributes'
 import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
 
@@ -102,6 +103,8 @@ export interface FurnitureDoc {
   drilling: DrillingMap
   /** Joint style derived at every panel contact on each compile. */
   joinery: JoinerySettings
+  /** Router edge profiles, keyed by `PanelRole`. */
+  routerProfiles: RouterProfileMap
   columns: FurnitureColumn[]
 }
 

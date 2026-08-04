@@ -18,6 +18,14 @@ import {
   type PanelEdge,
 } from '~~/shared/domain/edgeband'
 import { DRILL_OPERATION_TYPES, type DrillingRule } from '~~/shared/domain/drilling'
+import {
+  ALL_PROFILE_EDGES,
+  ROUTER_PROFILES,
+  type RouterProfile,
+  type RouterProfileKind,
+  conflictingEdges,
+  defaultRouterProfile,
+} from '~~/shared/domain/router-profiles'
 import { JOINT_STYLES } from '~~/shared/domain/joinery'
 import { PATTERN_ANCHORS, PATTERN_KINDS } from '~~/shared/domain/operations'
 import { HARDWARE_CATALOG } from '~~/shared/domain/hardware-catalog'
@@ -50,9 +58,11 @@ import {
   updateDrillingRule,
   setJoineryValue,
   setFrameMemberCount,
+  setRouterProfile,
   resetSettings,
   resetPanelAttributes,
   resetDrilling,
+  resetRouterProfiles,
 } from '~~/shared/yjs/doc'
 
 interface Props {
@@ -580,6 +590,43 @@ function commitJoineryField(field: JoineryField, event: Event) {
   }
   const current = joinery.value[field.key]
   input.value = field.unit === 'mm' ? toMm(current) : String(current)
+}
+
+// ---------------------------------------------------------------------------
+// Router edge profiles (routerCove / RoundOver / Straight / Chamfer, multiPocket)
+// ---------------------------------------------------------------------------
+
+const routerProfileKinds = ROUTER_PROFILES
+
+function routerProfileFor(role: PanelRole): RouterProfile {
+  return snapshot.value.routerProfiles[role] ?? defaultRouterProfile()
+}
+
+function setProfileKind(role: PanelRole, kind: RouterProfileKind) {
+  // Picking a profile with no edges selected would be a no-op; default to all
+  // four, which is what the routerX4 tools do.
+  const current = routerProfileFor(role)
+  const hasEdges = PANEL_EDGES.some(edge => current.edges[edge])
+  setRouterProfile(props.ydoc, role, {
+    kind,
+    edges: kind !== 'none' && !hasEdges ? { ...ALL_PROFILE_EDGES } : undefined,
+  })
+}
+
+function toggleProfileEdge(role: PanelRole, edge: PanelEdge, on: boolean) {
+  setRouterProfile(props.ydoc, role, { edges: { [edge]: on } as never })
+}
+
+function commitProfileBitSize(role: PanelRole, event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm) && mm > 0) setRouterProfile(props.ydoc, role, { bitSize: mm / 1000 })
+  input.value = toMm(routerProfileFor(role).bitSize)
+}
+
+/** Edges that carry tape a profile would rout straight off. */
+function profileBandConflicts(role: PanelRole): PanelEdge[] {
+  return conflictingEdges(routerProfileFor(role), panelAttributesFor(role).bands)
 }
 
 // ---------------------------------------------------------------------------
@@ -1524,8 +1571,8 @@ if (getCurrentScope()) {
 
                 <AppDialog
                   v-model:open="grainOpen"
-                  title="Grain &amp; edge banding"
-                  description="Set grain direction and taped edges per panel role. Feeds the 3D preview, cutlist, and tape report."
+                  title="Edges &amp; grain"
+                  description="Grain direction, router edge profiles, and edge banding per panel role. Feeds the 3D preview, cutlist, and tape report."
                 >
                   <div class="flex flex-wrap items-center justify-end gap-1 border-b border-default pb-3">
                     <UButton
@@ -1534,9 +1581,9 @@ if (getCurrentScope()) {
                       size="xs"
                       color="neutral"
                       variant="ghost"
-                      aria-label="Reset grain direction and remove all edge banding"
+                      aria-label="Reset grain, router profiles, and edge banding"
                       class="active:scale-[0.97] transition-transform duration-150"
-                      @click="resetPanelAttributes(props.ydoc)"
+                      @click="resetPanelAttributes(props.ydoc); resetRouterProfiles(props.ydoc)"
                     />
                   </div>
 
@@ -1560,6 +1607,63 @@ if (getCurrentScope()) {
                           :aria-label="`Grain direction for ${PANEL_ROLE_LABEL[role]}`"
                           @update:model-value="setGrain(role, $event as never)"
                         />
+
+                        <span class="text-muted">Edge profile</span>
+                        <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <USelect
+                            :model-value="routerProfileFor(role).kind"
+                            :items="routerProfileKinds"
+                            value-key="value"
+                            label-key="label"
+                            size="xs"
+                            class="min-w-32 flex-1"
+                            :aria-label="`Router edge profile for ${PANEL_ROLE_LABEL[role]}`"
+                            @update:model-value="setProfileKind(role, $event as never)"
+                          />
+                          <span
+                            v-if="routerProfileFor(role).kind !== 'none'"
+                            class="flex items-center gap-1"
+                          >
+                            <input
+                              :value="toMm(routerProfileFor(role).bitSize)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-14 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              :aria-label="`Router bit size for ${PANEL_ROLE_LABEL[role]}`"
+                              @keydown.enter.prevent="commitProfileBitSize(role, $event)"
+                              @blur="commitProfileBitSize(role, $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </div>
+
+                        <template v-if="routerProfileFor(role).kind !== 'none'">
+                          <span class="self-start pt-1 text-muted">Routed edges</span>
+                          <div class="flex flex-wrap gap-x-3 gap-y-1">
+                            <label
+                              v-for="edge in PANEL_EDGES"
+                              :key="edge"
+                              class="flex items-center gap-1.5"
+                            >
+                              <UCheckbox
+                                :model-value="routerProfileFor(role).edges[edge]"
+                                size="sm"
+                                :aria-label="`Rout the ${PANEL_EDGE_LABEL[edge].toLowerCase()} edge of ${PANEL_ROLE_LABEL[role]}`"
+                                @update:model-value="toggleProfileEdge(role, edge, $event === true)"
+                              />
+                              <span class="text-dimmed">{{ PANEL_EDGE_LABEL[edge] }}</span>
+                            </label>
+                          </div>
+                        </template>
+
+                        <template v-if="profileBandConflicts(role).length > 0">
+                          <span />
+                          <p class="text-warning">
+                            Routing would cut the tape off the
+                            {{ profileBandConflicts(role).map(e => PANEL_EDGE_LABEL[e].toLowerCase()).join(', ') }}
+                            edge{{ profileBandConflicts(role).length > 1 ? 's' : '' }}.
+                          </p>
+                        </template>
 
                         <span class="self-start pt-1 text-muted">Banding</span>
                         <div class="grid grid-cols-2 gap-1.5">
@@ -1599,13 +1703,13 @@ if (getCurrentScope()) {
 
               <UButton
                 icon="i-lucide-layers"
-                label="Grain &amp; edge banding"
+                label="Edges &amp; grain"
                 size="xs"
                 color="neutral"
                 variant="soft"
                 block
                 class="justify-center active:scale-[0.97] transition-transform duration-150"
-                aria-label="Open grain and edge banding settings"
+                aria-label="Open edges and grain settings"
                 @click="grainOpen = true"
               />
 

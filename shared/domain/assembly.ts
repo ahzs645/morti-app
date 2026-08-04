@@ -15,6 +15,15 @@ import { effectiveDepth, isHoleOperation } from '~~/shared/domain/operations'
 import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
 import { drillingOperationsForPanel } from '~~/shared/domain/drilling'
 import { applyJoinery } from '~~/shared/domain/joinery'
+import {
+  type ProfileCutter,
+  type RouterProfile,
+  type RouterProfileMap,
+  defaultRouterProfileMap,
+  profileCutters,
+  profileIsActive,
+  selectedProfileEdges,
+} from '~~/shared/domain/router-profiles'
 
 // ---------------------------------------------------------------------------
 // Tunables (mirrors Dt_x5Iy5.js module-level constants)
@@ -917,19 +926,49 @@ function getEvaluator(): Evaluator {
   return evaluatorInstance
 }
 
-function panelGeometryCacheKey(panel: CompiledPanel, operations: PanelOperation[]): string {
-  // Hash includes role-independent dims + every through-hole on this panel.
+function panelGeometryCacheKey(
+  panel: CompiledPanel,
+  operations: PanelOperation[],
+  profile?: RouterProfile,
+): string {
+  // The key must cover everything that changes the mesh: the panel's own
+  // dimensions, every operation that cuts it, and its router profile. Missing
+  // any of these would serve a stale geometry from the cache.
   const ops = operations
-    .filter(o => o.operationType === 'through-hole' && o.targetPanelKey === panel.key)
-    .map(o => `${(o.center?.x ?? o.cx ?? 0).toFixed(6)},${(o.center?.y ?? o.cy ?? 0).toFixed(6)},${(o.diameter ?? 0).toFixed(6)}`)
+    .filter(o => o.targetPanelKey === panel.key)
+    .map(o => [
+      o.operationType,
+      o.face ?? 'front',
+      (o.center?.x ?? o.cx ?? o.x ?? 0).toFixed(6),
+      (o.center?.y ?? o.cy ?? o.y ?? 0).toFixed(6),
+      (o.diameter ?? 0).toFixed(6),
+      (o.depth ?? 0).toFixed(6),
+      (o.width ?? 0).toFixed(6),
+      (o.height ?? 0).toFixed(6),
+      (o.headDiameter ?? 0).toFixed(6),
+      (o.headDepth ?? 0).toFixed(6),
+      (o.rotation ?? 0).toFixed(6),
+      o.through ? '1' : '0',
+    ].join(','))
     .sort()
     .join(';')
+
+  const profileKey = profile && profileIsActive(profile)
+    ? [
+        profile.kind,
+        profile.bitSize.toFixed(6),
+        profile.pocketCount,
+        selectedProfileEdges(profile).join(''),
+      ].join(',')
+    : 'none'
+
   return [
     panel.role,
     panel.width.toFixed(6),
     panel.height.toFixed(6),
     panel.thickness.toFixed(6),
     ops,
+    profileKey,
   ].join('|')
 }
 
@@ -938,11 +977,49 @@ function panelGeometryCacheKey(panel: CompiledPanel, operations: PanelOperation[
  * three-bvh-csg; rail-cuts are not represented in geometry — they are drawn
  * as outline rectangles by RailCutMesh.
  */
+/** Build the three.js geometry for one router cutter, in panel-local space. */
+function routerCutterGeometry(cutter: ProfileCutter, evaluator: Evaluator): THREE.BufferGeometry {
+  if (cutter.shape === 'cylinder' || cutter.shape === 'rounded') {
+    const cylinder = new THREE.CylinderGeometry(cutter.radius, cutter.radius, cutter.axis === 'x' ? cutter.size.x : cutter.size.y, 24)
+    // CylinderGeometry runs along +Y; rotate it onto the edge's axis.
+    if (cutter.axis === 'x') cylinder.rotateZ(Math.PI / 2)
+
+    if (cutter.shape === 'cylinder') {
+      cylinder.translate(cutter.position.x, cutter.position.y, cutter.position.z)
+      return cylinder
+    }
+
+    // Round-over: the cutter is the corner box *minus* the cylinder, so what
+    // survives on the panel is a rounded corner rather than a scooped one.
+    const box = new THREE.BoxGeometry(cutter.size.x, cutter.size.y, cutter.size.z)
+    const boxBrush = new Brush(box)
+    boxBrush.updateMatrixWorld()
+    const cylinderBrush = new Brush(cylinder)
+    cylinderBrush.updateMatrixWorld()
+    const carved = (evaluator.evaluate(boxBrush, cylinderBrush, SUBTRACTION) as Brush).geometry.clone()
+    box.dispose()
+    cylinder.dispose()
+    carved.translate(cutter.position.x, cutter.position.y, cutter.position.z)
+    return carved
+  }
+
+  const box = new THREE.BoxGeometry(cutter.size.x, cutter.size.y, cutter.size.z)
+  if (cutter.shape === 'wedge' && cutter.rotation) {
+    // Spin the square about the edge axis to get a 45° bevel.
+    if (cutter.axis === 'x') box.rotateX(cutter.rotation)
+    else box.rotateY(cutter.rotation)
+  }
+  box.translate(cutter.position.x, cutter.position.y, cutter.position.z)
+  return box
+}
+
 export function compilePartGeometry(
   panel: CompiledPanel,
   operations: PanelOperation[],
+  routerProfiles: RouterProfileMap = defaultRouterProfileMap(),
 ): THREE.BufferGeometry {
-  const key = panelGeometryCacheKey(panel, operations)
+  const profile = routerProfiles[panel.role]
+  const key = panelGeometryCacheKey(panel, operations, profile)
   const cached = GEOMETRY_CACHE.get(key)
   if (cached) return cached.clone()
 
@@ -1037,6 +1114,14 @@ export function compilePartGeometry(
       if (op.rotation) boxCut.rotateZ(op.rotation)
       boxCut.translate(ox, oy, through ? 0 : blindCutterZ(depth, sign))
       cut(boxCut)
+    }
+  }
+
+  // Router profiles run last so they shape the finished edge, after any
+  // holes and slots have been taken out of the face.
+  if (profile) {
+    for (const cutter of profileCutters(panel, profile)) {
+      cut(routerCutterGeometry(cutter, evaluator))
     }
   }
 

@@ -45,6 +45,13 @@ import {
   type JoinerySettings,
 } from '~~/shared/domain/joinery'
 import {
+  type RouterProfile,
+  type RouterProfileMap,
+  defaultRouterProfileMap,
+  sanitizeRouterProfileMap,
+  sanitizeRouterProfile,
+} from '~~/shared/domain/router-profiles'
+import {
   DESIGN_SCHEMA_VERSION,
   PROJECT_SETTINGS_KEYS,
   type FurnitureColumn,
@@ -188,6 +195,24 @@ function readJoinery(map: Y.Map<unknown>): JoinerySettings {
   return sanitizeJoinery(raw as Partial<JoinerySettings>)
 }
 
+/** Read the `routerProfiles` branch as a POJO, filling any gap with defaults. */
+function readRouterProfiles(map: Y.Map<unknown>): RouterProfileMap {
+  const profiles = map.get('routerProfiles') as Y.Map<unknown> | undefined
+  if (!profiles) return defaultRouterProfileMap()
+  const raw: Record<string, unknown> = {}
+  for (const role of ALL_PANEL_ROLES) {
+    const entry = profiles.get(role)
+    if (entry) raw[role] = entry
+  }
+  return sanitizeRouterProfileMap(raw)
+}
+
+function writeRouterProfile(target: Y.Map<unknown>, role: string, profile: RouterProfile) {
+  // Stored as plain JSON: a profile is picked as a unit, so per-field CRDT
+  // merge would only ever produce combinations nobody chose.
+  target.set(role, JSON.parse(JSON.stringify(profile)) as unknown)
+}
+
 /** Read the `settings` branch as a POJO, filling any gap with the default. */
 function readSettingsMap(map: Y.Map<unknown>): ProjectSettings {
   const settings = map.get('settings') as Y.Map<unknown> | undefined
@@ -274,6 +299,18 @@ export function ensureInitialized(doc: Y.Doc) {
       for (const key of JOINERY_KEYS) {
         if (joinery.get(key) !== clean[key]) joinery.set(key, clean[key])
       }
+    }
+    // Router profiles default to a square edge, which cuts nothing.
+    if (!map.has('routerProfiles')) {
+      const profiles = new Y.Map<unknown>()
+      map.set('routerProfiles', profiles)
+      const defaults = defaultRouterProfileMap()
+      for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, defaults[role])
+    }
+    else {
+      const profiles = map.get('routerProfiles') as Y.Map<unknown>
+      const clean = readRouterProfiles(map)
+      for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, clean[role])
     }
     runPendingMigrations(doc)
     if (!map.has('columns')) {
@@ -432,6 +469,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     panelAttributes: readPanelAttributesMap(map),
     drilling: readDrillingMap(map),
     joinery: readJoinery(map),
+    routerProfiles: readRouterProfiles(map),
     columns,
   }
 }
@@ -645,6 +683,36 @@ export function updateDrillingRule(doc: Y.Doc, role: string, ruleId: string, pat
     )
     writeDrillingRules(drilling, role, sanitizeDrillingMap({ [role]: next })[role as keyof DrillingMap])
   }, 'updateDrillingRule')
+}
+
+export function setRouterProfile(doc: Y.Doc, role: string, patch: Partial<RouterProfile>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let profiles = map.get('routerProfiles') as Y.Map<unknown> | undefined
+    if (!profiles) {
+      profiles = new Y.Map<unknown>()
+      map.set('routerProfiles', profiles)
+    }
+    const current = readRouterProfiles(map)[role as keyof RouterProfileMap]
+    writeRouterProfile(profiles, role, sanitizeRouterProfile({
+      ...current,
+      ...patch,
+      edges: { ...current.edges, ...(patch.edges ?? {}) },
+    }))
+  }, 'setRouterProfile')
+}
+
+export function resetRouterProfiles(doc: Y.Doc) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let profiles = map.get('routerProfiles') as Y.Map<unknown> | undefined
+    if (!profiles) {
+      profiles = new Y.Map<unknown>()
+      map.set('routerProfiles', profiles)
+    }
+    const defaults = defaultRouterProfileMap()
+    for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, defaults[role])
+  }, 'resetRouterProfiles')
 }
 
 export function setJoineryValue<K extends keyof JoinerySettings>(doc: Y.Doc, key: K, value: JoinerySettings[K]) {

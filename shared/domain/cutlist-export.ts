@@ -43,6 +43,8 @@ export interface CutlistPanelRow {
   grain?: string
   /** Banded-edge summary, e.g. `T/B/L`. */
   banding?: string
+  /** Router edge profile note, e.g. `Chamfer 6 mm T/B`. */
+  edgeProfile?: string
 }
 
 export interface CutlistOperationRow {
@@ -108,6 +110,7 @@ interface Presenter {
   showOperations: boolean
   showGrain: boolean
   showBanding: boolean
+  showProfile: boolean
 }
 
 function roundTo(value: number, precision: number): number {
@@ -123,6 +126,7 @@ function makePresenter(data: CutlistData): Presenter {
   const hasCost = data.panels.some(row => row.cost != null) || data.totals != null
   const hasGrain = data.panels.some(row => row.grain != null)
   const hasBanding = data.panels.some(row => row.banding != null && row.banding !== '—')
+  const hasProfile = data.panels.some(row => row.edgeProfile != null && row.edgeProfile !== '—')
   return {
     settings: s,
     lengthSymbol: LENGTH_UNIT_SYMBOL[s.lengthUnit],
@@ -146,6 +150,7 @@ function makePresenter(data: CutlistData): Presenter {
     showOperations: s.reportOperations,
     showGrain: hasGrain,
     showBanding: hasBanding,
+    showProfile: hasProfile,
   }
 }
 
@@ -164,6 +169,7 @@ function panelExtraHeaders(p: Presenter): string[] {
   const headers: string[] = []
   if (p.showGrain) headers.push('Grain')
   if (p.showBanding) headers.push('Banding')
+  if (p.showProfile) headers.push('Edge profile')
   if (p.showMaterial) headers.push('Material')
   if (p.showWeight) headers.push(`Weight (${WEIGHT_UNIT_SYMBOL[p.settings.weightUnit]})`)
   if (p.showCost) headers.push(`Cost (${p.settings.currency})`)
@@ -174,6 +180,7 @@ function panelExtraCells(row: CutlistPanelRow, p: Presenter): string[] {
   const cells: string[] = []
   if (p.showGrain) cells.push(row.grain ?? '')
   if (p.showBanding) cells.push(row.banding ?? '')
+  if (p.showProfile) cells.push(row.edgeProfile ?? '')
   if (p.showMaterial) cells.push(row.material ?? '')
   if (p.showWeight) cells.push(row.weightKg == null ? '' : formatWeight(row.weightKg, p.settings.weightUnit))
   if (p.showCost) cells.push(row.cost == null ? '' : p.money(row.cost))

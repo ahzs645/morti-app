@@ -14,6 +14,7 @@ import { panelRoleCode } from './cutlist'
 import { DEFAULT_DIVIDER_COUNT, DEFAULT_FURNITURE_CONFIG, DEFAULT_PROJECT_SETTINGS, DEFAULT_SHELF_COUNT, defaultModule } from './defaults'
 import { defaultDrillingMap } from './drilling'
 import { DEFAULT_JOINERY_SETTINGS } from './joinery'
+import { defaultRouterProfileMap } from './router-profiles'
 import { defaultPanelAttributeMap } from './panel-attributes'
 import type { FurnitureDoc, ModuleType } from './types'
 import { DESIGN_SCHEMA_VERSION } from './types'
@@ -27,6 +28,7 @@ function docWithSingleModule(type: ModuleType, extra: Record<string, unknown> = 
     panelAttributes: defaultPanelAttributeMap(),
     drilling: defaultDrillingMap(),
     joinery: { ...DEFAULT_JOINERY_SETTINGS },
+    routerProfiles: defaultRouterProfileMap(),
     columns: [
       { width: 0.5, modules: [{ id: 'm1', type, height: 1.2, ...extra }] },
     ],
