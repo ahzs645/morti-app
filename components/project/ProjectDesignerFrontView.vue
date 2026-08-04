@@ -110,6 +110,11 @@ function isOpenBay(mod: FurnitureModule): boolean {
   return mod.type === 'shelf' || mod.type === 'shelves' || mod.type === 'dividers' || mod.type === 'frame'
 }
 
+function frontClass(mod: FurnitureModule): string {
+  if (!anySelected.value || isSelected(mod.id)) return 'bg-primary'
+  return 'bg-inverted opacity-10 ring ring-default/60 hover:opacity-10'
+}
+
 function moduleClass(mod: FurnitureModule): string {
   const moduleIsSelected = isSelected(mod.id)
   if (isOpenBay(mod)) {
@@ -117,8 +122,10 @@ function moduleClass(mod: FurnitureModule): string {
     if (moduleIsSelected) return 'module-shelf module-shelf-selected'
     return 'module-shelf'
   }
-  if (!anySelected.value || moduleIsSelected) return 'bg-primary'
-  return 'bg-inverted opacity-10 ring ring-default/60 hover:opacity-10'
+  // A double-door module is two panels, and the compiler shapes each one; the
+  // module rectangle is not a front, so it carries no fill of its own.
+  if (mod.type === 'doors') return ''
+  return frontClass(mod)
 }
 
 /** Fill for a board drawn inside an open bay — a real panel, so it is solid. */
@@ -202,13 +209,20 @@ function doorsPullStyle(side: 'left' | 'right'): Record<string, string> {
   }
 }
 
-function doorDividerStyle(): Record<string, string> {
+/**
+ * One leaf of a double-door module. They are drawn as two elements rather than
+ * one fill with a line down it so that a shaped outline clips each leaf, the
+ * way the compiler shapes each of the two door panels — a single arch spanning
+ * the pair is a different piece of furniture.
+ */
+function doorLeafStyle(side: 'left' | 'right'): Record<string, string> {
+  const halfGap = 1
   return {
-    width: '2px',
-    left: '50%',
     top: '0',
     bottom: '0',
-    transform: 'translateX(-50%)',
+    [side]: '0',
+    width: `calc(50% - ${halfGap}px)`,
+    ...(doorClipPath.value ? { clipPath: doorClipPath.value } : {}),
   }
 }
 
@@ -268,8 +282,9 @@ function frontClipPath(role: 'door-front'): string | null {
 const doorClipPath = computed(() => frontClipPath('door-front'))
 
 /**
- * True only for door modules, where the module rectangle *is* the front panel,
- * so clipping it is exact.
+ * True only for single-door modules, where the module rectangle *is* the front
+ * panel, so clipping it is exact. A double-door module clips its two leaves
+ * individually instead — see `doorLeafStyle`.
  *
  * Open shelves, dividers, and frames have no front at all. Drawers do, but a
  * drawer module holds N stacked fronts and the bands here are drawn as
@@ -279,8 +294,7 @@ const doorClipPath = computed(() => frontClipPath('door-front'))
  * left out of this view; see docs/woodworking-port.md.
  */
 function hasFrontOutline(mod: FurnitureModule): boolean {
-  return (mod.type === 'doors' || mod.type === 'left-door' || mod.type === 'right-door')
-    && doorClipPath.value !== null
+  return (mod.type === 'left-door' || mod.type === 'right-door') && doorClipPath.value !== null
 }
 
 /** Applied to a module whose front carries a shaped outline. */
@@ -675,9 +689,12 @@ function addButtonMarginTop(boundaryIndex: number): string {
 
                           <template v-else-if="mod.type === 'doors'">
                             <div
+                              v-for="side in (['left', 'right'] as const)"
+                              :key="`${mod.id}-leaf-${side}`"
                               class="absolute"
-                              :class="visualBgClass()"
-                              :style="doorDividerStyle()"
+                              :class="frontClass(mod)"
+                              :style="doorLeafStyle(side)"
+                              aria-hidden="true"
                             />
                             <div
                               class="absolute rounded-full"
