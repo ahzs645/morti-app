@@ -204,6 +204,30 @@ For headless screenshots in CI/dev containers, Chromium is preinstalled; launch
 Playwright with `--use-gl=angle --use-angle=swiftshader` so the Three.js canvas
 renders without a GPU.
 
+### Comparing the flat view against the 3D
+
+The flat front view is hand-drawn HTML; the 3D comes out of the parametric
+compiler. Nothing keeps the two in step, so they drift silently — a module type
+drawn as a solid front on the left and an open bay on the right looks fine in
+either pane alone. `scripts/compare-views.mjs` captures both panes for one
+fixture per option and writes a contact sheet that puts each pair side by side:
+
+```bash
+npm run dev                          # in another terminal
+node scripts/compare-views.mjs       # → .screenshots/compare/index.html
+node scripts/compare-views.mjs --case=frame --case=dividers
+```
+
+It points the 3D camera straight down −Z first, so both panes show the same
+elevation and can be compared feature for feature rather than through a
+foreshortened three-quarter view. Cases where only the 3D can show something —
+edge profiles, drilling, joinery bores — say so in their `expect` note; that is
+the difference between a known limit of a front elevation and a bug.
+
+Fixture shapes live in `scripts/lib/morti-fixture.mjs`, shared with
+`make-demo-fixture.mjs`, so the schema version and branch encodings are written
+in one place.
+
 ## Second worked example: the `dividers` component
 
 `dividers` is the vertical counterpart to `shelves` — N evenly-spaced **vertical**

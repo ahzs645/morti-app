@@ -28,6 +28,9 @@ id_rsa*
 id_ed25519*
 deploy-key*
 
+# scripts/compare-views.mjs output
+.screenshots/
+
 # Local research/media artifacts
 promo-video/
 morti-video-edit/
