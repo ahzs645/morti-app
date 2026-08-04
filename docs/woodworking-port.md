@@ -268,8 +268,17 @@ Two design decisions run through all of it:
 ## What's next (good follow-on ports)
 
 - **Custom outline editor** — a point editor for `sketch2pad` / `wires2pad`.
-- **Outlines in the flat view** — shaped panels render in 3D and the cutlist,
-  but the front view still draws every module as a rectangle.
+- **Outlines in the flat view** — door fronts are clipped to their outline, but
+  drawer fronts are not: a drawer module holds N stacked fronts drawn as
+  separators over a single fill, so clipping the module would cut only the top
+  drawer. The bands need to become real elements first.
+
+  Note this is narrower than it first appears. An outline lives in its panel's
+  own width x height plane, and only the roles the compiler emits as
+  `vertical-xy` — door and drawer fronts, the back panel, frame members — have
+  that plane facing the viewer. A shaped `vertical-side` is arched across its
+  *depth*, so a front elevation genuinely cannot show it; that is geometry, not
+  a missing feature.
 - **Measurement overlay** — dimension annotations on the 3D model
   (`showMeasurements`, `magicMeasure`).
 - **Corner block / brace generators** — the parts and costing already exist.

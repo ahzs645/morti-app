@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FurnitureColumn, FurnitureConfig, FurnitureModule } from '~~/shared/domain/types'
 import type { FreePanel } from '~~/shared/domain/free-panels'
+import { type OutlineMap, outlineProfile } from '~~/shared/domain/outline'
 import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
 
 interface Props {
@@ -10,10 +11,13 @@ interface Props {
   zoomPercent: number
   /** Drawn as an elevation overlay so the flat view matches the 3D. */
   freePanels?: FreePanel[]
+  /** Front-facing outlines are clipped onto door fronts. */
+  outlines?: OutlineMap
 }
 
 const props = withDefaults(defineProps<Props>(), {
   freePanels: () => [],
+  outlines: undefined,
 })
 
 const emit = defineEmits<{
@@ -219,6 +223,48 @@ function shelfCount(mod: FurnitureModule): number {
 
 function dividerCount(mod: FurnitureModule): number {
   return Math.max(1, Math.min(16, Math.round((mod.dividerCount as number) || 1)))
+}
+
+// --- Front-panel outlines -------------------------------------------------
+//
+// An outline lives in its panel's own width x height plane. Only the roles the
+// compiler emits as `vertical-xy` — door and drawer fronts — have that plane
+// facing the viewer, so only those can show in a front elevation. A shaped
+// side panel is arched across its *depth*, which this view genuinely cannot
+// represent, and shouldn't pretend to.
+
+/** CSS `polygon()` for an outline, or null when the front is rectangular. */
+function frontClipPath(role: 'door-front'): string | null {
+  const profile = outlineProfile(props.outlines?.[role])
+  if (!profile || profile.length < 3) return null
+  // Normalized (-0.5..0.5, +y up) to CSS percentages (+y down).
+  const points = profile
+    .map(p => `${((p.x + 0.5) * 100).toFixed(3)}% ${((0.5 - p.y) * 100).toFixed(3)}%`)
+    .join(', ')
+  return `polygon(${points})`
+}
+
+const doorClipPath = computed(() => frontClipPath('door-front'))
+
+/**
+ * True only for door modules, where the module rectangle *is* the front panel,
+ * so clipping it is exact.
+ *
+ * Open shelves, dividers, and frames have no front at all. Drawers do, but a
+ * drawer module holds N stacked fronts and the bands here are drawn as
+ * separators over a single fill — clipping the module would cut only the top
+ * drawer and leave the rest square, which reads as a design rather than a
+ * limitation. Until the bands are real elements, drawer-front outlines are
+ * left out of this view; see docs/woodworking-port.md.
+ */
+function hasFrontOutline(mod: FurnitureModule): boolean {
+  return (mod.type === 'doors' || mod.type === 'left-door' || mod.type === 'right-door')
+    && doorClipPath.value !== null
+}
+
+/** Applied to a module whose front carries a shaped outline. */
+function frontClipStyle(mod: FurnitureModule): Record<string, string> {
+  return hasFrontOutline(mod) && doorClipPath.value ? { clipPath: doorClipPath.value } : {}
 }
 
 // --- Face frame (mirrors `compileFrame` in shared/domain/assembly.ts) ---
@@ -542,7 +588,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                           type="button"
                           class="relative block w-full shrink-0 text-left outline-none transition-[opacity,transform,background-color] duration-150 hover:opacity-90 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-default"
                           :class="moduleClass(mod)"
-                          :style="{ height: px(mod.height) }"
+                          :style="{ height: px(mod.height), ...frontClipStyle(mod) }"
                           :aria-label="`${mod.type} module, height ${formatMeasurement(mod.height)} meters`"
                           @click.stop="onModuleClick($event, mod.id)"
                         >

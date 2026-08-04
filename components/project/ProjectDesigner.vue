@@ -1208,6 +1208,7 @@ if (getCurrentScope()) {
       :config="config"
       :selected-module-ids="selectedIds"
       :free-panels="freePanels"
+      :outlines="snapshot.outlines"
       :zoom-percent="clampedZoomPercent"
       class="relative z-0 min-h-0 w-full flex-1"
       @add-column-left="addColumnLeft"
