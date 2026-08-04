@@ -41,7 +41,7 @@ const Kl = 28 // column meta footer offset
 const Bt = 10 // gap above the top-of-column "+" button
 const qt = 4 // column outer padding
 const Ke = 4 // column-resize divider lateral margin
-const We = 4 // column-resize divider width / module-boundary spacer height
+const We = 4 // column-resize divider width
 const zt = 6 // module-boundary drag-handle height
 const ALLOWED_ZOOMS = [100, 75, 50, 25] as const
 const OUTER_RAIL_GAP = 12 // gap-3 between side add buttons and the rail
@@ -470,15 +470,15 @@ function columnTotalHeight(col: FurnitureColumn): number {
 }
 
 /**
- * The module stack is exactly as tall as the modules in it. Boundary handles
- * are drawn over the boundaries rather than laid out between them: when they
- * took layout space, a column split into two modules came out taller than a
- * column holding one module of the same height, and the drawing said the two
- * pieces were different sizes when the 3D said they were not.
+ * The module stack is exactly as tall as the modules in it. Decks and boundary
+ * handles are drawn over the boundaries rather than laid out between them:
+ * when they took layout space, a column split into two modules came out taller
+ * than a column holding one module of the same height, and the drawing said
+ * the two pieces were different sizes when the 3D said they were not.
  */
 function columnStackHeight(col: FurnitureColumn): number {
   if (col.modules.length === 0) return 0
-  return We + col.modules.reduce((sum, mod) => sum + meterToPx(mod.height), 0)
+  return col.modules.reduce((sum, mod) => sum + meterToPx(mod.height), 0)
 }
 
 function columnRenderedHeight(col: FurnitureColumn): number {
@@ -486,15 +486,37 @@ function columnRenderedHeight(col: FurnitureColumn): number {
   return height > 0 ? height + qt * 2 : 0
 }
 
-/** Pixels from the stack's bottom edge to the top of module `index`. */
+/**
+ * Pixels from the stack's bottom edge to boundary `index` — 0 is the floor,
+ * and boundary k is the top of module k−1. The compiler puts a deck on every
+ * one of them.
+ */
 function boundaryOffsetPx(col: FurnitureColumn, index: number): number {
-  let offset = We
-  for (let i = 0; i <= index; i++) offset += meterToPx(col.modules[i]?.height ?? 0)
+  let offset = 0
+  for (let i = 0; i < index; i++) offset += meterToPx(col.modules[i]?.height ?? 0)
   return offset
 }
 
 function boundaryHandleStyle(col: FurnitureColumn, index: number): Record<string, string> {
   return { bottom: `${boundaryOffsetPx(col, index) - zt / 2}px`, height: `${zt}px` }
+}
+
+/** A carcass deck's drawn thickness in px, never thinner than a hairline. */
+function deckThicknessPx(): number {
+  return Math.max(2, Math.round(props.config.panelThickness * pxPerMeter.value))
+}
+
+/**
+ * A deck straddles its boundary the way the compiler places it, and carries a
+ * hairline of background either side. That seam is what makes it read as a
+ * separate board: a drawer front and the deck above it are both drawn in the
+ * primary fill, so without it the two run together into one slab.
+ */
+const DECK_SEAM_PX = 1
+
+function deckBandStyle(col: FurnitureColumn, index: number): Record<string, string> {
+  const band = deckThicknessPx() + 2 * DECK_SEAM_PX
+  return { bottom: `${boundaryOffsetPx(col, index) - band / 2}px`, height: `${band}px` }
 }
 
 function boundaryHeight(boundaryIndex: number): number {
@@ -520,12 +542,11 @@ function boundaryHeightPx(boundaryIndex: number): string {
 // produces keeps the overlay locked to the columns at any zoom.
 
 /**
- * Where world Y = 0 lands, in pixels above the rail body's bottom edge. The
- * column stack is bottom-aligned but sits on its own padding and the bottom
- * spacer — measure from the rail bottom and a free panel reads low, close
- * enough to the carcass top to merge with it.
+ * Where world Y = 0 lands, in pixels above the rail body's bottom edge: the
+ * stack is bottom-aligned inside the column's padding, and its bottom edge is
+ * the floor the compiler measures from.
  */
-const FLOOR_OFFSET_PX = qt + We
+const FLOOR_OFFSET_PX = qt
 
 /** Pixels from the rail body's left edge for a world X, in metres (0 = centre). */
 function pxForWorldX(x: number): number {
@@ -645,14 +666,6 @@ function addButtonMarginTop(boundaryIndex: number): string {
                       class="relative flex flex-col-reverse items-stretch"
                       :aria-label="`Column ${ci + 1}, width ${formatMeasurement(col.width)} meters`"
                     >
-                      <span
-                        v-if="col.modules.length > 0"
-                        class="block w-full shrink-0"
-                        :class="selectedFillClass"
-                        :style="spacerStyle('height')"
-                        aria-hidden="true"
-                      />
-
                       <template
                         v-for="(mod, mi) in col.modules"
                         :key="mod.id"
@@ -776,28 +789,39 @@ function addButtonMarginTop(boundaryIndex: number): string {
                         </button>
                       </template>
 
-                      <!-- Drawn over the boundaries, not laid out between them,
-                           so the stack stays exactly as tall as its modules.
-                           The positioning lives on this wrapper because
+                      <!-- Decks and handles are drawn over the boundaries, not
+                           laid out between them, so the stack stays exactly as
+                           tall as its modules. One deck at the floor, one on
+                           top of every module — the same boundaries the
+                           compiler puts a `horizontal-deck` panel on. -->
+                      <div
+                        v-for="bi in col.modules.length + 1"
+                        :key="`deck-${bi - 1}`"
+                        class="pointer-events-none absolute inset-x-0 z-10 bg-default"
+                        :style="deckBandStyle(col, bi - 1)"
+                        aria-hidden="true"
+                      >
+                        <span
+                          class="absolute inset-x-0 top-1/2 block -translate-y-1/2"
+                          :class="selectedFillClass"
+                          :style="{ height: `${deckThicknessPx()}px` }"
+                        />
+                      </div>
+
+                      <!-- The positioning lives on this wrapper because
                            `.boundary-resize-hit` sets `position: relative`. -->
                       <div
                         v-for="(mod, mi) in col.modules"
                         :key="`${mod.id}-boundary`"
-                        class="absolute inset-x-0 z-10"
-                        :style="boundaryHandleStyle(col, mi)"
+                        class="absolute inset-x-0 z-20"
+                        :style="boundaryHandleStyle(col, mi + 1)"
                       >
                         <button
                           type="button"
                           class="boundary-resize-hit block size-full cursor-row-resize"
                           :aria-label="`Resize module boundary ${mi + 1} in column ${ci + 1}`"
                           @pointerdown="onBoundaryPointerDown(ci, mi + 1, $event)"
-                        >
-                          <span
-                            class="absolute inset-x-0 top-1/2 -translate-y-1/2"
-                            :class="selectedFillClass"
-                            :style="spacerStyle('height')"
-                          />
-                        </button>
+                        />
                       </div>
                     </div>
                   </div>
