@@ -11,6 +11,30 @@ import type {
   PanelOperation,
   PanelRole,
 } from '~~/shared/domain/types'
+import { effectiveDepth, isHoleOperation } from '~~/shared/domain/operations'
+import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
+import { frameMemberOffsets } from '~~/shared/domain/frame'
+import { drillingOperationsForPanel } from '~~/shared/domain/drilling'
+import { applyJoinery } from '~~/shared/domain/joinery'
+import { compileFreePanels } from '~~/shared/domain/free-panels'
+import { applyVariables } from '~~/shared/domain/variables'
+import {
+  type OutlineMap,
+  type PanelOutline,
+  defaultOutlineMap,
+  outlineIsShaped,
+  outlineProfileForPanel,
+  profileSignedArea,
+} from '~~/shared/domain/outline'
+import {
+  type ProfileCutter,
+  type RouterProfile,
+  type RouterProfileMap,
+  defaultRouterProfileMap,
+  profileCutters,
+  profileIsActive,
+  selectedProfileEdges,
+} from '~~/shared/domain/router-profiles'
 
 // ---------------------------------------------------------------------------
 // Tunables (mirrors Dt_x5Iy5.js module-level constants)
@@ -682,10 +706,74 @@ function compileDividers(module: FurnitureModule, cell: CompiledCellBounds, conf
   return { panels, operations: [] as PanelOperation[] }
 }
 
+/**
+ * Face frame across the module opening — the parametric form of `panel2frame`.
+ *
+ * The four outer members always exist; `frameRailCount` and `frameStileCount`
+ * add evenly spaced members inside them, so a plain surround is the zero case.
+ * Members sit at the cell's front face, ahead of the carcass.
+ */
+function compileFrame(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
+  const panels: CompiledPanel[] = []
+  const memberWidth = Math.min(FRAME_MEMBER_WIDTH, Math.max(DEGENERATE_MIN_SIZE, Math.min(cell.width, cell.height) / 3))
+  const thickness = config.panelThickness
+  const z = cell.frontZ - thickness / 2
+  const width = Math.max(DEGENERATE_MIN_SIZE, cell.frontWidth)
+  const height = Math.max(DEGENERATE_MIN_SIZE, cell.frontHeight)
+  const centerX = (cell.xMin + cell.xMax) / 2
+  const centerY = (cell.yMin + cell.yMax) / 2
+  const topY = centerY + height / 2 - memberWidth / 2
+  const bottomY = centerY - height / 2 + memberWidth / 2
+  const leftX = centerX - width / 2 + memberWidth / 2
+  const rightX = centerX + width / 2 - memberWidth / 2
+
+  const rail = (key: string, y: number, railWidth: number) => makePanel({
+    key,
+    role: 'frame-rail',
+    sourceModuleId: module.id,
+    position: { x: centerX, y, z },
+    size: { width: railWidth, height: memberWidth, thickness },
+    orientation: 'vertical-xy',
+  })
+
+  const stile = (key: string, x: number) => makePanel({
+    key,
+    role: 'frame-stile',
+    sourceModuleId: module.id,
+    position: { x, y: centerY, z },
+    size: { width: memberWidth, height, thickness },
+    orientation: 'vertical-xy',
+  })
+
+  // Stiles run the full height; rails span between them.
+  panels.push(stile(`frame-stile:${module.id}:left`, leftX))
+  panels.push(stile(`frame-stile:${module.id}:right`, rightX))
+  const railSpan = Math.max(DEGENERATE_MIN_SIZE, width - 2 * memberWidth)
+  panels.push(rail(`frame-rail:${module.id}:top`, topY, railSpan))
+  panels.push(rail(`frame-rail:${module.id}:bottom`, bottomY, railSpan))
+
+  // `frameMemberOffsets` returns the outer members too; those are already
+  // placed above, so only the interior slice is used here.
+  const extraRails = Math.max(0, Math.min(8, Math.floor(module.frameRailCount ?? 0)))
+  const railOffsets = frameMemberOffsets(height, memberWidth, extraRails).slice(1, -1)
+  for (const [index, offset] of railOffsets.entries()) {
+    panels.push(rail(`frame-rail:${module.id}:${index}`, centerY - height / 2 + offset, railSpan))
+  }
+
+  const extraStiles = Math.max(0, Math.min(8, Math.floor(module.frameStileCount ?? 0)))
+  const stileOffsets = frameMemberOffsets(width, memberWidth, extraStiles).slice(1, -1)
+  for (const [index, offset] of stileOffsets.entries()) {
+    panels.push(stile(`frame-stile:${module.id}:${index}`, centerX - width / 2 + offset))
+  }
+
+  return { panels, operations: [] as PanelOperation[] }
+}
+
 function compileModule(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
   if (module.type === 'shelf') return { panels: [] as CompiledPanel[], operations: [] as PanelOperation[] }
   if (module.type === 'shelves') return compileShelves(module, cell, config)
   if (module.type === 'dividers') return compileDividers(module, cell, config)
+  if (module.type === 'frame') return compileFrame(module, cell, config)
   if (module.type === 'drawer') return compileDrawer(module, cell, config)
   return compileDoorOrFrontPanels(module, cell, config)
 }
@@ -726,12 +814,24 @@ function normalizePanel(panel: CompiledPanel, yOffset: number): CompiledPanel {
 }
 
 export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOptions = {}): CompiledAssembly {
-  const config = furnitureDoc.config
+  // Variables drive config fields one way, so resolving them up front means
+  // every downstream calculation sees the same numbers.
+  const config = furnitureDoc.variables?.length
+    ? applyVariables(furnitureDoc.config, furnitureDoc.variables)
+    : furnitureDoc.config
   const columns = furnitureDoc.columns
-  if (columns.length === 0) return { panels: [], operations: [], issues: [] }
-
   const totalWidth = columns.reduce((sum, column) => sum + column.width, 0)
-  if (!(totalWidth > 0)) return { panels: [], operations: [], issues: [] }
+
+  // A design can be nothing but free panels, so a missing or degenerate column
+  // structure still has to compile whatever free panels exist.
+  if (columns.length === 0 || !(totalWidth > 0)) {
+    const only = furnitureDoc.freePanels?.length ? compileFreePanels(furnitureDoc.freePanels) : []
+    const operations = furnitureDoc.joinery ? applyJoinery(only, furnitureDoc.joinery, config.panelJointClearance).operations : []
+    const normalized = operations.map(normalizeOperation)
+    const byKey = new Map(only.map(panel => [panel.key, panel]))
+    for (const operation of normalized) byKey.get(operation.targetPanelKey)?.operations.push(operation)
+    return { panels: only, operations: normalized, issues: [] }
+  }
 
   const columnHeights = columns.map(column => column.modules.reduce((sum, module) => sum + module.height, 0))
   const cells = buildCellGrid(columns, config)
@@ -807,6 +907,29 @@ export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOption
   }
 
   const normalizedPanels = panels.map(panel => normalizePanel(panel, config.sidePanelOverhang))
+
+  // Free panels are already in world coordinates, so they bypass the column
+  // offset that normalizePanel applies — but they join the same list, which is
+  // what gets them into the cutlist, costing, joinery, 3D, and export.
+  if (furnitureDoc.freePanels?.length) {
+    normalizedPanels.push(...compileFreePanels(furnitureDoc.freePanels))
+  }
+
+  // Drilling rules are re-applied on every compile, against the *normalized*
+  // panel sizes, so a pattern anchored to an edge follows the panel as the
+  // design changes rather than baking in the size it was authored at.
+  if (furnitureDoc.drilling) {
+    for (const panel of normalizedPanels) {
+      operations.push(...drillingOperationsForPanel(panel.key, panel.role, panel, furnitureDoc.drilling))
+    }
+  }
+
+  // Joinery reads the finished panel boxes, so it sees every panel the
+  // compiler produced — carcass, module, and (later) free-standing alike.
+  if (furnitureDoc.joinery) {
+    operations.push(...applyJoinery(normalizedPanels, furnitureDoc.joinery, config.panelJointClearance).operations)
+  }
+
   const normalizedOperations = operations.map(normalizeOperation)
   const normalizedPanelMap = new Map(normalizedPanels.map(panel => [panel.key, panel]))
   for (const operation of normalizedOperations) {
@@ -831,19 +954,55 @@ function getEvaluator(): Evaluator {
   return evaluatorInstance
 }
 
-function panelGeometryCacheKey(panel: CompiledPanel, operations: PanelOperation[]): string {
-  // Hash includes role-independent dims + every through-hole on this panel.
+function panelGeometryCacheKey(
+  panel: CompiledPanel,
+  operations: PanelOperation[],
+  profile?: RouterProfile,
+  outline?: PanelOutline,
+): string {
+  // The key must cover everything that changes the mesh: the panel's own
+  // dimensions, every operation that cuts it, and its router profile. Missing
+  // any of these would serve a stale geometry from the cache.
   const ops = operations
-    .filter(o => o.operationType === 'through-hole' && o.targetPanelKey === panel.key)
-    .map(o => `${(o.center?.x ?? o.cx ?? 0).toFixed(6)},${(o.center?.y ?? o.cy ?? 0).toFixed(6)},${(o.diameter ?? 0).toFixed(6)}`)
+    .filter(o => o.targetPanelKey === panel.key)
+    .map(o => [
+      o.operationType,
+      o.face ?? 'front',
+      (o.center?.x ?? o.cx ?? o.x ?? 0).toFixed(6),
+      (o.center?.y ?? o.cy ?? o.y ?? 0).toFixed(6),
+      (o.diameter ?? 0).toFixed(6),
+      (o.depth ?? 0).toFixed(6),
+      (o.width ?? 0).toFixed(6),
+      (o.height ?? 0).toFixed(6),
+      (o.headDiameter ?? 0).toFixed(6),
+      (o.headDepth ?? 0).toFixed(6),
+      (o.rotation ?? 0).toFixed(6),
+      o.through ? '1' : '0',
+    ].join(','))
     .sort()
     .join(';')
+
+  const profileKey = profile && profileIsActive(profile)
+    ? [
+        profile.kind,
+        profile.bitSize.toFixed(6),
+        profile.pocketCount,
+        selectedProfileEdges(profile).join(''),
+      ].join(',')
+    : 'none'
+
+  const outlineKey = outlineIsShaped(outline)
+    ? [outline!.shape, outline!.amount.toFixed(4), outline!.points.length].join(',')
+    : 'rect'
+
   return [
     panel.role,
     panel.width.toFixed(6),
     panel.height.toFixed(6),
     panel.thickness.toFixed(6),
     ops,
+    profileKey,
+    outlineKey,
   ].join('|')
 }
 
@@ -852,11 +1011,80 @@ function panelGeometryCacheKey(panel: CompiledPanel, operations: PanelOperation[
  * three-bvh-csg; rail-cuts are not represented in geometry — they are drawn
  * as outline rectangles by RailCutMesh.
  */
+/** Build the three.js geometry for one router cutter, in panel-local space. */
+function routerCutterGeometry(cutter: ProfileCutter, evaluator: Evaluator): THREE.BufferGeometry {
+  if (cutter.shape === 'cylinder' || cutter.shape === 'rounded') {
+    const cylinder = new THREE.CylinderGeometry(cutter.radius, cutter.radius, cutter.axis === 'x' ? cutter.size.x : cutter.size.y, 24)
+    // CylinderGeometry runs along +Y; rotate it onto the edge's axis.
+    if (cutter.axis === 'x') cylinder.rotateZ(Math.PI / 2)
+
+    if (cutter.shape === 'cylinder') {
+      cylinder.translate(cutter.position.x, cutter.position.y, cutter.position.z)
+      return cylinder
+    }
+
+    // Round-over: the cutter is the corner box *minus* the cylinder, so what
+    // survives on the panel is a rounded corner rather than a scooped one.
+    const box = new THREE.BoxGeometry(cutter.size.x, cutter.size.y, cutter.size.z)
+    const boxBrush = new Brush(box)
+    boxBrush.updateMatrixWorld()
+    const cylinderBrush = new Brush(cylinder)
+    cylinderBrush.updateMatrixWorld()
+    const carved = (evaluator.evaluate(boxBrush, cylinderBrush, SUBTRACTION) as Brush).geometry.clone()
+    box.dispose()
+    cylinder.dispose()
+    carved.translate(cutter.position.x, cutter.position.y, cutter.position.z)
+    return carved
+  }
+
+  const box = new THREE.BoxGeometry(cutter.size.x, cutter.size.y, cutter.size.z)
+  if (cutter.shape === 'wedge' && cutter.rotation) {
+    // Spin the square about the edge axis to get a 45° bevel.
+    if (cutter.axis === 'x') box.rotateX(cutter.rotation)
+    else box.rotateY(cutter.rotation)
+  }
+  box.translate(cutter.position.x, cutter.position.y, cutter.position.z)
+  return box
+}
+
+/**
+ * The panel's base solid: a plain box, or an extruded profile when the panel
+ * carries a non-rectangular outline. Extrusion is centred on z so the result
+ * occupies the same span a box would.
+ */
+function panelBaseGeometry(
+  panel: CompiledPanel,
+  outline: PanelOutline | undefined,
+  w: number,
+  h: number,
+  t: number,
+): THREE.BufferGeometry {
+  if (!outlineIsShaped(outline)) return new THREE.BoxGeometry(w, h, t)
+
+  const points = outlineProfileForPanel(outline, { width: w, height: h })
+  if (!points || points.length < 3) return new THREE.BoxGeometry(w, h, t)
+
+  // THREE.Shape expects counter-clockwise winding for the outer contour.
+  const wound = profileSignedArea(points) < 0 ? [...points].reverse() : points
+  const shape = new THREE.Shape()
+  shape.moveTo(wound[0].x, wound[0].y)
+  for (const point of wound.slice(1)) shape.lineTo(point.x, point.y)
+  shape.closePath()
+
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 12 })
+  geometry.translate(0, 0, -t / 2)
+  return geometry
+}
+
 export function compilePartGeometry(
   panel: CompiledPanel,
   operations: PanelOperation[],
+  routerProfiles: RouterProfileMap = defaultRouterProfileMap(),
+  outlines: OutlineMap = defaultOutlineMap(),
 ): THREE.BufferGeometry {
-  const key = panelGeometryCacheKey(panel, operations)
+  const profile = routerProfiles[panel.role]
+  const outline = outlines[panel.role]
+  const key = panelGeometryCacheKey(panel, operations, profile, outline)
   const cached = GEOMETRY_CACHE.get(key)
   if (cached) return cached.clone()
 
@@ -864,29 +1092,101 @@ export function compilePartGeometry(
   const h = Math.max(0.001, panel.height)
   const t = Math.max(0.001, panel.thickness)
 
-  const box = new THREE.BoxGeometry(w, h, t)
+  const box = panelBaseGeometry(panel, outline, w, h, t)
   let brushAccum = new Brush(box)
   brushAccum.updateMatrixWorld()
 
   const evaluator = getEvaluator()
-  const holes = operations.filter(
-    o =>
-      o.operationType === 'through-hole'
-      && o.targetPanelKey === panel.key
-      && (o.diameter ?? 0) > 0,
-  )
+  const mine = operations.filter(o => o.targetPanelKey === panel.key)
 
-  if (holes.length > 0) {
-    const cylHeight = t * 1.35 + PULL_HOLE_DEPTH_PADDING * 2
-    for (const op of holes) {
+  /** Subtract a cutter and dispose it. */
+  const cut = (geometry: THREE.BufferGeometry) => {
+    const cutBrush = new Brush(geometry)
+    cutBrush.updateMatrixWorld()
+    brushAccum = evaluator.evaluate(brushAccum, cutBrush, SUBTRACTION) as Brush
+    geometry.dispose()
+  }
+
+  // Blind features are cut from the face they are drilled into; `front` is +Z.
+  const faceSign = (op: PanelOperation) => (op.face === 'back' ? -1 : 1)
+  const OVERSHOOT = PULL_HOLE_DEPTH_PADDING * 2
+
+  /**
+   * Centre a blind cutter of height `depth + OVERSHOOT` so it starts flush
+   * with the drilled face and bottoms out exactly `depth` into the panel.
+   * Front face sits at +t/2, back at -t/2.
+   */
+  const blindCutterZ = (depth: number, sign: number) => sign * (t / 2 + OVERSHOOT / 2 - depth / 2)
+
+  for (const op of mine) {
+    const ox = op.center?.x ?? op.cx ?? op.x ?? 0
+    const oy = op.center?.y ?? op.cy ?? op.y ?? 0
+    const sign = faceSign(op)
+
+    if (isHoleOperation(op) && (op.diameter ?? 0) > 0) {
       const r = Math.max(HOLE_MIN_DIAMETER / 2, (op.diameter ?? 0) / 2)
-      const cyl = new THREE.CylinderGeometry(r, r, cylHeight, 32)
-      cyl.rotateX(Math.PI / 2)
-      cyl.translate(op.center?.x ?? op.cx ?? 0, op.center?.y ?? op.cy ?? 0, 0)
-      const cutBrush = new Brush(cyl)
-      cutBrush.updateMatrixWorld()
-      brushAccum = evaluator.evaluate(brushAccum, cutBrush, SUBTRACTION) as Brush
-      cyl.dispose()
+      const depth = effectiveDepth(op, t)
+
+      if (depth == null) {
+        // Through: overshoot both faces so the boolean stays watertight.
+        const cyl = new THREE.CylinderGeometry(r, r, t * 1.35 + OVERSHOOT, 32)
+        cyl.rotateX(Math.PI / 2)
+        cyl.translate(ox, oy, 0)
+        cut(cyl)
+      }
+      else {
+        const cyl = new THREE.CylinderGeometry(r, r, depth + OVERSHOOT, 32)
+        cyl.rotateX(Math.PI / 2)
+        cyl.translate(ox, oy, blindCutterZ(depth, sign))
+        cut(cyl)
+      }
+
+      // Head recess: a cone for a countersink, a flat-bottomed bore otherwise.
+      const headRadius = Math.max(r, (op.headDiameter ?? 0) / 2)
+      if (op.operationType === 'countersink' && headRadius > r) {
+        // 82° included angle is the flat-head wood-screw standard.
+        const coneHeight = (headRadius - r) / Math.tan((82 / 2) * (Math.PI / 180))
+        const cone = new THREE.CylinderGeometry(headRadius, r, coneHeight, 32)
+        // After rotateX(+90°) the wide end faces +Z; flip it for a back-face
+        // countersink so the mouth still opens onto the drilled face.
+        cone.rotateX(sign > 0 ? Math.PI / 2 : -Math.PI / 2)
+        cone.translate(ox, oy, sign * (t / 2 - coneHeight / 2))
+        cut(cone)
+      }
+      else if (op.operationType === 'counterbore' && headRadius > r) {
+        const headDepth = Math.max(HOLE_MIN_DIAMETER, Math.min(t, op.headDepth ?? 0))
+        const bore = new THREE.CylinderGeometry(headRadius, headRadius, headDepth + OVERSHOOT, 32)
+        bore.rotateX(Math.PI / 2)
+        bore.translate(ox, oy, blindCutterZ(headDepth, sign))
+        cut(bore)
+      }
+      continue
+    }
+
+    // Pockets, grooves, dados, and rabbets all remove a rectangular prism from
+    // one face. `rail-cut` keeps its existing overlay-only treatment.
+    if (
+      op.operationType === 'pocket'
+      || op.operationType === 'groove'
+      || op.operationType === 'dado'
+      || op.operationType === 'rabbet'
+    ) {
+      const sw = Math.max(RAILCUT_MIN_SIZE, op.width ?? 0)
+      const sh = Math.max(RAILCUT_MIN_SIZE, op.height ?? 0)
+      const depth = effectiveDepth(op, t)
+      const through = depth == null
+      const boxCut = new THREE.BoxGeometry(sw, sh, through ? t * 1.35 + OVERSHOOT : depth + OVERSHOOT)
+      if (op.rotation) boxCut.rotateZ(op.rotation)
+      boxCut.translate(ox, oy, through ? 0 : blindCutterZ(depth, sign))
+      cut(boxCut)
+    }
+  }
+
+  // Router profiles run last so they shape the finished edge, after any
+  // holes and slots have been taken out of the face.
+  if (profile) {
+    for (const cutter of profileCutters(panel, profile)) {
+      cut(routerCutterGeometry(cutter, evaluator))
     }
   }
 

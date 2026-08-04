@@ -3,7 +3,48 @@ import type * as Y from 'yjs'
 import type { AiFurnitureDraft, AiFurnitureGenerateResponse } from '~~/shared/domain/ai-furniture'
 import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
 import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_SHELF_COUNT, SHELF_COUNT_MAX, SHELF_COUNT_MIN, DIVIDER_COUNT_MAX, DIVIDER_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
-import type { FurnitureConfig, FurnitureModule, ModuleType } from '~~/shared/domain/types'
+import type { FurnitureConfig, FurnitureModule, ModuleType, PanelRole, ProjectSettings } from '~~/shared/domain/types'
+import {
+  ALL_PANEL_ROLES,
+  GRAIN_DIRECTIONS,
+  PANEL_ROLE_LABEL,
+  attributesForRole,
+  type GrainDirection,
+} from '~~/shared/domain/panel-attributes'
+import {
+  EDGE_BAND_LIBRARY,
+  PANEL_EDGES,
+  PANEL_EDGE_LABEL,
+  type PanelEdge,
+} from '~~/shared/domain/edgeband'
+import { DRILL_OPERATION_TYPES, type DrillingRule } from '~~/shared/domain/drilling'
+import {
+  ALL_PROFILE_EDGES,
+  ROUTER_PROFILES,
+  type RouterProfile,
+  type RouterProfileKind,
+  conflictingEdges,
+  defaultRouterProfile,
+} from '~~/shared/domain/router-profiles'
+import { JOINT_STYLES } from '~~/shared/domain/joinery'
+import { OUTLINE_SHAPES, type PanelOutline, defaultOutline } from '~~/shared/domain/outline'
+import { applyVariables, conflictingBindings, variableForField } from '~~/shared/domain/variables'
+import type { TransportLimits } from '~~/shared/domain/occupied-space'
+import {
+  PANEL_PLANES,
+  type FreePanel,
+  type PanelPlane,
+  type WorldAxis,
+} from '~~/shared/domain/free-panels'
+import { PATTERN_ANCHORS, PATTERN_KINDS } from '~~/shared/domain/operations'
+import { HARDWARE_CATALOG } from '~~/shared/domain/hardware-catalog'
+import {
+  AREA_UNITS,
+  FRACTION_DENOMINATORS,
+  LENGTH_UNITS,
+  VOLUME_UNITS,
+  WEIGHT_UNITS,
+} from '~~/shared/domain/units'
 import { validateFurnitureDocIssues } from '~~/shared/domain/assembly-validation'
 import {
   insertColumn,
@@ -19,6 +60,34 @@ import {
   setDividerCount,
   setModuleHeight,
   setModuleType,
+  setSettingValue,
+  setPanelAttributes,
+  addDrillingRule,
+  removeDrillingRule,
+  updateDrillingRule,
+  setJoineryValue,
+  setFrameMemberCount,
+  setRouterProfile,
+  setPanelOutline,
+  addVariable,
+  removeVariable,
+  updateVariable,
+  setTransportLimit,
+  addFreePanel,
+  removeFreePanels,
+  updateFreePanel,
+  nudgeFreePanels,
+  resizeFreePanels,
+  duplicateFreePanelToPlane,
+  addPanelFromFace,
+  addPanelBetween,
+  centerFreePanels,
+  spaceFreePanelsEqually,
+  resetSettings,
+  resetPanelAttributes,
+  resetDrilling,
+  resetRouterProfiles,
+  resetPanelOutlines,
 } from '~~/shared/yjs/doc'
 
 interface Props {
@@ -71,7 +140,14 @@ if (getCurrentScope()) {
 
 const columns = computed(() => snapshot.value.columns)
 const config = computed<FurnitureConfig>(() => snapshot.value.config)
-const effectiveConfig = computed(() => config.value)
+// Variables drive config fields at compile time, so the inspector has to
+// resolve them too — otherwise a driven field would show the stored number
+// while the model was built from the variable's.
+const effectiveConfig = computed(() =>
+  snapshot.value.variables.length > 0
+    ? applyVariables(config.value, snapshot.value.variables)
+    : config.value,
+)
 
 const internalSelectedIds = ref<string[]>([])
 const clampedZoomPercent = computed<number>(() => {
@@ -418,6 +494,379 @@ const settingsOpen = ref(false)
 const copiedConfig = ref(false)
 let copiedConfigTimer: ReturnType<typeof setTimeout> | undefined
 
+// ---------------------------------------------------------------------------
+// Units & reporting (magicSettings / getDimensions)
+// ---------------------------------------------------------------------------
+
+const projectSettings = computed(() => snapshot.value.settings)
+
+const COST_BASIS_OPTIONS = [
+  { value: 'volume' as const, label: 'Per cubic metre (timber)' },
+  { value: 'area' as const, label: 'Per square metre (sheet goods)' },
+]
+
+/** One row per preference, rendered as a labelled select in the settings dialog. */
+const settingsSelectFields = computed(() => [
+  { key: 'lengthUnit' as const, label: 'Dimension units', items: LENGTH_UNITS, help: 'Unit used for panel dimensions in the inspector, cutlist, and exports.' },
+  { key: 'edgeUnit' as const, label: 'Edge units', items: LENGTH_UNITS, help: 'Unit used for edge lengths and banding runs.' },
+  { key: 'areaUnit' as const, label: 'Area units', items: AREA_UNITS, help: 'Unit used for sheet and face-area totals.' },
+  { key: 'volumeUnit' as const, label: 'Volume units', items: VOLUME_UNITS, help: 'Unit used for timber volume totals. Board feet is the trade unit for rough lumber.' },
+  { key: 'weightUnit' as const, label: 'Weight units', items: WEIGHT_UNITS, help: 'Unit used for the wood weight rollup.' },
+  { key: 'costBasis' as const, label: 'Cost basis', items: COST_BASIS_OPTIONS, help: 'Price against timber volume (m³) or sheet-goods face area (m²).' },
+])
+
+const settingsToggleFields = [
+  { key: 'reportWeight' as const, label: 'Report weight', help: 'Show a weight column and total in the cutlist and exports.' },
+  { key: 'reportCost' as const, label: 'Report cost', help: 'Show a material cost column and total in the cutlist and exports.' },
+  { key: 'reportOperations' as const, label: 'Report operations', help: 'Include the machining-operations section in exports.' },
+]
+
+const fractionDenominatorItems = FRACTION_DENOMINATORS.map(d => ({ value: d, label: `1/${d}"` }))
+
+/** Fractional inches replace decimal places with a denominator choice. */
+const showsFractionDenominator = computed(() =>
+  projectSettings.value.lengthUnit === 'fraction' || projectSettings.value.edgeUnit === 'fraction',
+)
+
+function updateSetting<K extends keyof ProjectSettings>(key: K, value: ProjectSettings[K]) {
+  setSettingValue(props.ydoc, key, value)
+}
+
+function commitPrecision(key: 'lengthPrecision' | 'edgePrecision' | 'areaPrecision', event: Event) {
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (Number.isFinite(parsed)) updateSetting(key, parsed)
+  input.value = String(projectSettings.value[key])
+}
+
+// ---------------------------------------------------------------------------
+// Grain & edge banding (grainH/V/X, bandApply/bandRemove)
+// ---------------------------------------------------------------------------
+
+const grainOpen = ref(false)
+
+/** Sentinel for "no tape" — USelect can't round-trip a null value key. */
+const BARE_EDGE_VALUE = 'none'
+
+const edgeBandItems = [
+  { value: BARE_EDGE_VALUE, label: 'Bare' },
+  ...EDGE_BAND_LIBRARY.map(band => ({ value: band.id, label: band.label })),
+]
+
+function panelAttributesFor(role: PanelRole) {
+  return attributesForRole(snapshot.value.panelAttributes, role)
+}
+
+function setGrain(role: PanelRole, grain: GrainDirection) {
+  setPanelAttributes(props.ydoc, role, { grain })
+}
+
+function setBand(role: PanelRole, edge: PanelEdge, bandId: string) {
+  const bands = { ...panelAttributesFor(role).bands, [edge]: bandId === BARE_EDGE_VALUE ? null : bandId }
+  setPanelAttributes(props.ydoc, role, { bands })
+}
+
+// --- Face frame (panel2frame) ---
+function sharedFrameValue(key: 'frameRailCount' | 'frameStileCount'): string {
+  const values = selectedModuleInfos.value
+    .filter(info => info.module.type === 'frame')
+    .map(info => info.module[key] ?? 0)
+  if (values.length === 0) return ''
+  return values.every(value => value === values[0]) ? String(values[0]) : ''
+}
+
+const selectedFrameRailValue = computed(() => sharedFrameValue('frameRailCount'))
+const selectedFrameStileValue = computed(() => sharedFrameValue('frameStileCount'))
+
+function onSelectedFrameMemberCommit(key: 'frameRailCount' | 'frameStileCount', event: Event) {
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (Number.isFinite(parsed)) {
+    for (const info of selectedModuleInfos.value) {
+      if (info.module.type !== 'frame') continue
+      setFrameMemberCount(props.ydoc, info.columnIndex, info.moduleIndex, key, parsed)
+    }
+  }
+  input.value = sharedFrameValue(key)
+}
+
+// ---------------------------------------------------------------------------
+// Variables & transport (Std_VarSet, showAlias, showOccupiedSpace)
+// ---------------------------------------------------------------------------
+
+const variables = computed(() => snapshot.value.variables)
+const transport = computed(() => snapshot.value.transport)
+
+const bindableFields = projectDesignerConfigFields.map(field => ({
+  value: field.key as keyof FurnitureConfig,
+  label: field.label,
+}))
+
+const bindingConflicts = computed(() => conflictingBindings(variables.value))
+
+const transportFields: { key: keyof TransportLimits, label: string }[] = [
+  { key: 'width', label: 'Door / opening width' },
+  { key: 'height', label: 'Door / opening height' },
+  { key: 'length', label: 'Vehicle load length' },
+]
+
+function commitVariableValue(id: string, event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm) && mm >= 0) updateVariable(props.ydoc, id, { value: mm / 1000 })
+  const current = variables.value.find(v => v.id === id)
+  if (current) input.value = toMm(current.value)
+}
+
+function commitVariableName(id: string, event: Event) {
+  const input = event.target as HTMLInputElement
+  updateVariable(props.ydoc, id, { name: input.value })
+  const current = variables.value.find(v => v.id === id)
+  if (current) input.value = current.name
+}
+
+function commitTransportLimit(key: keyof TransportLimits, event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm) && mm >= 0) setTransportLimit(props.ydoc, key, mm / 1000)
+  input.value = toMm(transport.value[key])
+}
+
+/** Alias shown against a config field that a variable drives. */
+function aliasFor(key: string): string | null {
+  return variableForField(variables.value, key as keyof FurnitureConfig)?.name ?? null
+}
+
+// ---------------------------------------------------------------------------
+// Panel outlines (panelSide*, panelBackOut, panelCoverXY, roundCurve, sketch2pad)
+// ---------------------------------------------------------------------------
+
+const outlineShapes = OUTLINE_SHAPES
+
+function outlineFor(role: PanelRole): PanelOutline {
+  return snapshot.value.outlines[role] ?? defaultOutline()
+}
+
+function commitOutlineAmount(role: PanelRole, event: Event) {
+  const input = event.target as HTMLInputElement
+  const percent = Number(input.value)
+  if (Number.isFinite(percent)) setPanelOutline(props.ydoc, role, { amount: percent / 100 })
+  input.value = String(Math.round(outlineFor(role).amount * 100))
+}
+
+// ---------------------------------------------------------------------------
+// Free panels (start / move & copy / resize / face / between / location tools)
+// ---------------------------------------------------------------------------
+
+const freePanelsOpen = ref(false)
+const selectedFreePanelIds = ref<string[]>([])
+
+const freePanels = computed(() => snapshot.value.freePanels)
+const panelPlanes = PANEL_PLANES
+const freePanelRoleItems = ALL_PANEL_ROLES.map(role => ({ value: role, label: PANEL_ROLE_LABEL[role] }))
+const moveAxes: { axis: WorldAxis, label: string }[] = [
+  { axis: 'x', label: 'X' },
+  { axis: 'y', label: 'Y' },
+  { axis: 'z', label: 'Z' },
+]
+
+/** Selection is by id, so it survives reordering and stale ids self-heal. */
+const selectedFreePanels = computed(() =>
+  freePanels.value.filter(panel => selectedFreePanelIds.value.includes(panel.id)),
+)
+const singleSelectedFreePanel = computed(() =>
+  selectedFreePanels.value.length === 1 ? selectedFreePanels.value[0] : null,
+)
+
+watch(freePanels, (panels) => {
+  const live = new Set(panels.map(panel => panel.id))
+  const pruned = selectedFreePanelIds.value.filter(id => live.has(id))
+  if (pruned.length !== selectedFreePanelIds.value.length) selectedFreePanelIds.value = pruned
+})
+
+function toggleFreePanelSelection(id: string, additive: boolean) {
+  const current = new Set(selectedFreePanelIds.value)
+  if (additive) {
+    if (current.has(id)) current.delete(id)
+    else current.add(id)
+    selectedFreePanelIds.value = [...current]
+  }
+  else {
+    selectedFreePanelIds.value = current.size === 1 && current.has(id) ? [] : [id]
+  }
+}
+
+function createFreePanel(plane: PanelPlane) {
+  selectedFreePanelIds.value = [addFreePanel(props.ydoc, plane)]
+}
+
+function deleteSelectedFreePanels() {
+  removeFreePanels(props.ydoc, selectedFreePanelIds.value)
+  selectedFreePanelIds.value = []
+}
+
+function commitFreePanelMetric(
+  panel: FreePanel,
+  group: 'size' | 'position',
+  axis: WorldAxis,
+  event: Event,
+) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm)) {
+    updateFreePanel(props.ydoc, panel.id, { [group]: { [axis]: mm / 1000 } } as never)
+  }
+  const current = freePanels.value.find(p => p.id === panel.id)
+  if (current) input.value = toMm(current[group][axis])
+}
+
+/** Resize step: one panel thickness, the same unit the nudge tools use. */
+const RESIZE_STEP = 0.018
+
+// ---------------------------------------------------------------------------
+// Joinery (magicJoints and the joint-cutting tools)
+// ---------------------------------------------------------------------------
+
+const joinery = computed(() => snapshot.value.joinery)
+const jointStyles = JOINT_STYLES
+
+const joineryStyleHint = computed(() =>
+  JOINT_STYLES.find(style => style.value === joinery.value.style)?.hint ?? '',
+)
+
+interface JoineryField {
+  key: 'fastenersPerJoint' | 'fastenerDiameter' | 'fastenerDepth' | 'endInset'
+  label: string
+  unit: 'mm' | 'per joint'
+}
+
+const joineryNumberFields: JoineryField[] = [
+  { key: 'fastenersPerJoint', label: 'Fasteners per joint', unit: 'per joint' },
+  { key: 'fastenerDiameter', label: 'Fastener diameter', unit: 'mm' },
+  { key: 'fastenerDepth', label: 'Fastener depth', unit: 'mm' },
+  { key: 'endInset', label: 'End inset', unit: 'mm' },
+]
+
+function commitJoineryField(field: JoineryField, event: Event) {
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    setJoineryValue(props.ydoc, field.key, field.unit === 'mm' ? parsed / 1000 : Math.round(parsed))
+  }
+  const current = joinery.value[field.key]
+  input.value = field.unit === 'mm' ? toMm(current) : String(current)
+}
+
+// ---------------------------------------------------------------------------
+// Router edge profiles (routerCove / RoundOver / Straight / Chamfer, multiPocket)
+// ---------------------------------------------------------------------------
+
+const routerProfileKinds = ROUTER_PROFILES
+
+function routerProfileFor(role: PanelRole): RouterProfile {
+  return snapshot.value.routerProfiles[role] ?? defaultRouterProfile()
+}
+
+function setProfileKind(role: PanelRole, kind: RouterProfileKind) {
+  // Picking a profile with no edges selected would be a no-op; default to all
+  // four, which is what the routerX4 tools do.
+  const current = routerProfileFor(role)
+  const hasEdges = PANEL_EDGES.some(edge => current.edges[edge])
+  setRouterProfile(props.ydoc, role, {
+    kind,
+    edges: kind !== 'none' && !hasEdges ? { ...ALL_PROFILE_EDGES } : undefined,
+  })
+}
+
+function toggleProfileEdge(role: PanelRole, edge: PanelEdge, on: boolean) {
+  setRouterProfile(props.ydoc, role, { edges: { [edge]: on } as never })
+}
+
+function commitProfileBitSize(role: PanelRole, event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm) && mm > 0) setRouterProfile(props.ydoc, role, { bitSize: mm / 1000 })
+  input.value = toMm(routerProfileFor(role).bitSize)
+}
+
+/** Edges that carry tape a profile would rout straight off. */
+function profileBandConflicts(role: PanelRole): PanelEdge[] {
+  return conflictingEdges(routerProfileFor(role), panelAttributesFor(role).bands)
+}
+
+// ---------------------------------------------------------------------------
+// Drilling (magicDriller, drillHoles, drillCountersinks, drillCounterbores)
+// ---------------------------------------------------------------------------
+
+const drillingOpen = ref(false)
+
+/** Sentinel for "no hardware" — USelect can't round-trip a null value key. */
+const NO_HARDWARE_VALUE = 'none'
+
+const drillOperationTypes = DRILL_OPERATION_TYPES
+const patternKinds = PATTERN_KINDS
+const patternAnchors = PATTERN_ANCHORS
+const drillFaces = [
+  { value: 'front' as const, label: 'Front face' },
+  { value: 'back' as const, label: 'Back face' },
+]
+const drillHardwareItems = [
+  { value: NO_HARDWARE_VALUE, label: 'None' },
+  ...HARDWARE_CATALOG.map(item => ({ value: item.code, label: `${item.code} — ${item.name}` })),
+]
+
+function drillingRulesFor(role: PanelRole): DrillingRule[] {
+  return snapshot.value.drilling[role] ?? []
+}
+
+/** Enabled rules across every role — shown as a count on the trigger button. */
+const activeDrillingRuleCount = computed(() =>
+  ALL_PANEL_ROLES.reduce((sum, role) => sum + drillingRulesFor(role).filter(rule => rule.enabled).length, 0),
+)
+
+function updateRule(role: PanelRole, ruleId: string, patch: Partial<DrillingRule>) {
+  updateDrillingRule(props.ydoc, role, ruleId, patch)
+}
+
+function updateRulePattern(role: PanelRole, ruleId: string, patch: Partial<DrillingRule['pattern']>) {
+  updateDrillingRule(props.ydoc, role, ruleId, { pattern: patch as DrillingRule['pattern'] })
+}
+
+/** Read a millimetre input and store it as metres. */
+function commitRuleMm(role: PanelRole, ruleId: string, key: 'diameter' | 'depth' | 'headDiameter' | 'headDepth', event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm) && mm >= 0) updateRule(role, ruleId, { [key]: mm / 1000 })
+  const rule = drillingRulesFor(role).find(r => r.id === ruleId)
+  if (rule) input.value = toMm(rule[key])
+}
+
+function commitPatternMm(role: PanelRole, ruleId: string, key: 'spacing' | 'inset' | 'offset', event: Event) {
+  const input = event.target as HTMLInputElement
+  const mm = Number(input.value)
+  if (Number.isFinite(mm)) updateRulePattern(role, ruleId, { [key]: mm / 1000 })
+  const rule = drillingRulesFor(role).find(r => r.id === ruleId)
+  if (rule) input.value = toMm(rule.pattern[key] ?? 0)
+}
+
+function commitPatternCount(role: PanelRole, ruleId: string, key: 'count' | 'rows', event: Event) {
+  const input = event.target as HTMLInputElement
+  const value = Number(input.value)
+  if (Number.isFinite(value)) updateRulePattern(role, ruleId, { [key]: Math.round(value) })
+  const rule = drillingRulesFor(role).find(r => r.id === ruleId)
+  if (rule) input.value = String(rule.pattern[key] ?? 1)
+}
+
+function toMm(metres: number): string {
+  return String(Math.round(metres * 10000) / 10)
+}
+
+function commitCurrency(event: Event) {
+  const input = event.target as HTMLInputElement
+  updateSetting('currency', input.value.trim().toUpperCase())
+  input.value = projectSettings.value.currency
+}
+
 const aiBuildOpen = ref(false)
 const aiPrompt = ref('')
 const aiLoading = ref(false)
@@ -535,6 +984,11 @@ function updateConfigValue(key: string, value: number) {
 function commitConfigField(field: ConfigField, event: Event) {
   const input = event.target as HTMLInputElement | null
   if (!input) return
+  // A driven field is owned by its variable; edit the variable instead.
+  if (aliasFor(field.key)) {
+    input.value = formatConfigValue(field)
+    return
+  }
   const parsed = parseNonNegativeMetric(input.value)
   if (parsed == null) {
     input.value = formatConfigValue(field)
@@ -548,6 +1002,8 @@ function resetConfig() {
   for (const k of FURNITURE_CONFIG_WRITABLE_KEYS) {
     setConfigValue(props.ydoc, k, DEFAULT_FURNITURE_CONFIG[k])
   }
+  // The dialog covers units and reporting too, so Reset clears both sections.
+  resetSettings(props.ydoc)
 }
 
 function configJson() {
@@ -556,7 +1012,7 @@ function configJson() {
     acc[field.key] = effectiveConfig.value[key] ?? DEFAULT_FURNITURE_CONFIG[key]
     return acc
   }, {})
-  return JSON.stringify(values, null, 2)
+  return JSON.stringify({ ...values, settings: projectSettings.value }, null, 2)
 }
 
 async function openAiBuilder() {
@@ -751,6 +1207,8 @@ if (getCurrentScope()) {
       :columns="columns"
       :config="config"
       :selected-module-ids="selectedIds"
+      :free-panels="freePanels"
+      :outlines="snapshot.outlines"
       :zoom-percent="clampedZoomPercent"
       class="relative z-0 min-h-0 w-full flex-1"
       @add-column-left="addColumnLeft"
@@ -820,6 +1278,7 @@ if (getCurrentScope()) {
                       value-key="value"
                       class="w-full"
                       size="xs"
+                      aria-label="Module type for selected modules"
                       @update:model-value="onSelectedTypeChange"
                     />
                   </dd>
@@ -896,6 +1355,33 @@ if (getCurrentScope()) {
                         @blur="onSelectedShelfCountCommit"
                       >
                     </dd>
+                  </template>
+
+                  <template v-if="selectedTypeValue === 'frame'">
+                    <label class="contents">
+                      <span class="self-center text-[0.7rem] text-muted">Rails</span>
+                      <input
+                        :value="selectedFrameRailValue"
+                        type="text"
+                        inputmode="numeric"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                        aria-label="Extra horizontal rails inside the frame"
+                        @keydown.enter.prevent="onSelectedFrameMemberCommit('frameRailCount', $event)"
+                        @blur="onSelectedFrameMemberCommit('frameRailCount', $event)"
+                      >
+                    </label>
+                    <label class="contents">
+                      <span class="self-center text-[0.7rem] text-muted">Stiles</span>
+                      <input
+                        :value="selectedFrameStileValue"
+                        type="text"
+                        inputmode="numeric"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                        aria-label="Extra vertical stiles inside the frame"
+                        @keydown.enter.prevent="onSelectedFrameMemberCommit('frameStileCount', $event)"
+                        @blur="onSelectedFrameMemberCommit('frameStileCount', $event)"
+                      >
+                    </label>
                   </template>
 
                   <template v-if="selectedTypeValue === 'dividers'">
@@ -1010,8 +1496,12 @@ if (getCurrentScope()) {
                   </div>
 
                   <dl class="grid max-h-[min(24rem,55vh)] grid-cols-[1fr_auto] gap-x-3 gap-y-2 overflow-y-auto pr-1 text-xs">
+                    <dt class="col-span-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Units &amp; reporting
+                    </dt>
+
                     <template
-                      v-for="field in projectDesignerConfigFields"
+                      v-for="field in settingsSelectFields"
                       :key="field.key"
                     >
                       <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
@@ -1034,13 +1524,326 @@ if (getCurrentScope()) {
                         </UTooltip>
                       </dt>
                       <dd>
+                        <USelect
+                          :model-value="projectSettings[field.key]"
+                          :items="field.items"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          class="w-52"
+                          :aria-label="field.label"
+                          @update:model-value="updateSetting(field.key, $event as never)"
+                        />
+                      </dd>
+                    </template>
+
+                    <template v-if="showsFractionDenominator">
+                      <dt class="flex min-w-0 items-center self-center text-muted">
+                        <span class="truncate">Fraction size</span>
+                      </dt>
+                      <dd>
+                        <USelect
+                          :model-value="projectSettings.fractionDenominator"
+                          :items="fractionDenominatorItems"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          class="w-52"
+                          aria-label="Smallest fraction shown for fractional inches"
+                          @update:model-value="updateSetting('fractionDenominator', $event as never)"
+                        />
+                      </dd>
+                    </template>
+
+                    <template v-else>
+                      <dt class="flex min-w-0 items-center self-center text-muted">
+                        <span class="truncate">Decimal places</span>
+                      </dt>
+                      <dd>
                         <div class="flex items-center gap-1">
+                          <input
+                            :value="projectSettings.lengthPrecision"
+                            type="text"
+                            inputmode="numeric"
+                            class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                            aria-label="Decimal places for dimensions"
+                            @keydown.enter.prevent="commitPrecision('lengthPrecision', $event)"
+                            @blur="commitPrecision('lengthPrecision', $event)"
+                          >
+                          <span class="text-muted lowercase">dp</span>
+                        </div>
+                      </dd>
+                    </template>
+
+                    <dt class="flex min-w-0 items-center self-center text-muted">
+                      <span class="truncate">Currency</span>
+                    </dt>
+                    <dd>
+                      <div class="flex items-center gap-1">
+                        <input
+                          :value="projectSettings.currency"
+                          type="text"
+                          maxlength="3"
+                          class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs uppercase tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                          aria-label="Currency code used for material cost"
+                          @keydown.enter.prevent="commitCurrency($event)"
+                          @blur="commitCurrency($event)"
+                        >
+                        <span class="text-muted lowercase">iso</span>
+                      </div>
+                    </dd>
+
+                    <template
+                      v-for="field in settingsToggleFields"
+                      :key="field.key"
+                    >
+                      <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
+                        <span class="truncate">{{ field.label }}</span>
+                        <UTooltip
+                          :text="field.help"
+                          :delay-duration="100"
+                          :content="{ side: 'left', sideOffset: 6 }"
+                        >
+                          <button
+                            type="button"
+                            class="config-help-icon active:scale-[0.97] transition-transform duration-150"
+                            :aria-label="`${field.label} help`"
+                          >
+                            <UIcon
+                              name="i-lucide-circle-help"
+                              class="size-3.5"
+                            />
+                          </button>
+                        </UTooltip>
+                      </dt>
+                      <dd class="flex justify-end">
+                        <USwitch
+                          :model-value="projectSettings[field.key]"
+                          size="sm"
+                          :aria-label="field.label"
+                          @update:model-value="updateSetting(field.key, $event)"
+                        />
+                      </dd>
+                    </template>
+
+                    <dt class="col-span-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Joinery
+                    </dt>
+
+                    <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
+                      <span class="truncate">Joint style</span>
+                      <UTooltip
+                        :text="joineryStyleHint"
+                        :delay-duration="100"
+                        :content="{ side: 'left', sideOffset: 6 }"
+                      >
+                        <button
+                          type="button"
+                          class="config-help-icon active:scale-[0.97] transition-transform duration-150"
+                          aria-label="Joint style help"
+                        >
+                          <UIcon
+                            name="i-lucide-circle-help"
+                            class="size-3.5"
+                          />
+                        </button>
+                      </UTooltip>
+                    </dt>
+                    <dd>
+                      <USelect
+                        :model-value="joinery.style"
+                        :items="jointStyles"
+                        value-key="value"
+                        label-key="label"
+                        size="xs"
+                        class="w-52"
+                        aria-label="Joint style applied at every panel contact"
+                        @update:model-value="setJoineryValue(props.ydoc, 'style', $event as never)"
+                      />
+                    </dd>
+
+                    <template v-if="joinery.style !== 'butt'">
+                      <template
+                        v-for="field in joineryNumberFields"
+                        :key="field.key"
+                      >
+                        <dt class="flex min-w-0 items-center self-center text-muted">
+                          <span class="truncate">{{ field.label }}</span>
+                        </dt>
+                        <dd>
+                          <div class="flex items-center gap-1">
+                            <input
+                              :value="field.unit === 'mm' ? toMm(joinery[field.key]) : joinery[field.key]"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                              :aria-label="`${field.label} (${field.unit})`"
+                              @keydown.enter.prevent="commitJoineryField(field, $event)"
+                              @blur="commitJoineryField(field, $event)"
+                            >
+                            <span class="text-muted lowercase">{{ field.unit }}</span>
+                          </div>
+                        </dd>
+                      </template>
+                    </template>
+
+                    <dt class="col-span-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Transport
+                    </dt>
+
+                    <template
+                      v-for="field in transportFields"
+                      :key="field.key"
+                    >
+                      <dt class="flex min-w-0 items-center self-center text-muted">
+                        <span class="truncate">{{ field.label }}</span>
+                      </dt>
+                      <dd>
+                        <div class="flex items-center gap-1">
+                          <input
+                            :value="toMm(transport[field.key])"
+                            type="text"
+                            inputmode="decimal"
+                            class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                            :aria-label="`${field.label} in millimetres, 0 to skip the check`"
+                            @keydown.enter.prevent="commitTransportLimit(field.key, $event)"
+                            @blur="commitTransportLimit(field.key, $event)"
+                          >
+                          <span class="text-muted lowercase">mm</span>
+                        </div>
+                      </dd>
+                    </template>
+
+                    <dd class="col-span-2 -mt-1 text-[11px] text-dimmed">
+                      0 skips the check. The assembled piece may be rotated to fit.
+                    </dd>
+
+                    <dt class="col-span-2 flex items-center justify-between pt-3">
+                      <span class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">Variables</span>
+                      <UButton
+                        icon="i-lucide-plus"
+                        label="Add"
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        aria-label="Add a project variable"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        @click="addVariable(props.ydoc)"
+                      />
+                    </dt>
+
+                    <dd
+                      v-if="variables.length === 0"
+                      class="col-span-2 text-dimmed"
+                    >
+                      No variables. A variable names a dimension and drives one or more fields below.
+                    </dd>
+
+                    <dd
+                      v-for="variable in variables"
+                      :key="variable.id"
+                      class="col-span-2 space-y-1.5 rounded-md bg-muted/40 p-2"
+                    >
+                      <div class="flex items-center gap-1.5">
+                        <input
+                          :value="variable.name"
+                          type="text"
+                          class="min-w-0 flex-1 rounded-md bg-muted px-2 py-1 text-xs text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                          aria-label="Variable name"
+                          @keydown.enter.prevent="commitVariableName(variable.id, $event)"
+                          @blur="commitVariableName(variable.id, $event)"
+                        >
+                        <input
+                          :value="toMm(variable.value)"
+                          type="text"
+                          inputmode="decimal"
+                          class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                          aria-label="Variable value in millimetres"
+                          @keydown.enter.prevent="commitVariableValue(variable.id, $event)"
+                          @blur="commitVariableValue(variable.id, $event)"
+                        >
+                        <span class="text-dimmed">mm</span>
+                        <UButton
+                          icon="i-lucide-trash-2"
+                          size="xs"
+                          color="error"
+                          variant="ghost"
+                          aria-label="Remove this variable"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="removeVariable(props.ydoc, variable.id)"
+                        />
+                      </div>
+                      <USelect
+                        :model-value="variable.bindings"
+                        :items="bindableFields"
+                        value-key="value"
+                        label-key="label"
+                        multiple
+                        size="xs"
+                        class="w-full"
+                        placeholder="Drives…"
+                        aria-label="Fields this variable drives"
+                        @update:model-value="updateVariable(props.ydoc, variable.id, { bindings: $event as never })"
+                      />
+                    </dd>
+
+                    <dd
+                      v-if="bindingConflicts.length > 0"
+                      class="col-span-2 text-warning"
+                    >
+                      More than one variable drives {{ bindingConflicts.length }} field(s); the last one listed wins.
+                    </dd>
+
+                    <dt class="col-span-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Construction
+                    </dt>
+
+                    <template
+                      v-for="field in projectDesignerConfigFields"
+                      :key="field.key"
+                    >
+                      <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
+                        <span class="truncate">{{ field.label }}</span>
+                        <span
+                          v-if="aliasFor(field.key)"
+                          class="shrink-0 truncate rounded bg-primary/15 px-1 text-[10px] text-primary"
+                          :title="`Driven by the variable “${aliasFor(field.key)}”`"
+                        >{{ aliasFor(field.key) }}</span>
+                        <UTooltip
+                          :text="field.help"
+                          :delay-duration="100"
+                          :content="{ side: 'left', sideOffset: 6 }"
+                        >
+                          <button
+                            type="button"
+                            class="config-help-icon active:scale-[0.97] transition-transform duration-150"
+                            :aria-label="`${field.label} help`"
+                          >
+                            <UIcon
+                              name="i-lucide-circle-help"
+                              class="size-3.5"
+                            />
+                          </button>
+                        </UTooltip>
+                      </dt>
+                      <dd>
+                        <div class="flex items-center gap-1">
+                          <!-- A driven field shows the variable's value, and is
+                               read-only: editing it here would be overwritten
+                               on the next compile. -->
                           <input
                             :value="formatConfigValue(field)"
                             type="text"
                             inputmode="decimal"
-                            class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                            :readonly="aliasFor(field.key) !== null"
+                            :class="[
+                              'w-20 rounded-md px-2 py-1 text-right text-xs tabular-nums shadow-sm outline-none ring-0 transition-colors duration-150',
+                              aliasFor(field.key)
+                                ? 'cursor-not-allowed bg-muted/50 text-muted'
+                                : 'bg-muted text-highlighted focus:bg-elevated',
+                            ]"
                             :aria-label="`${field.label} (${field.unit})`"
+                            :aria-readonly="aliasFor(field.key) !== null"
                             @keydown.enter.prevent="commitConfigField(field, $event)"
                             @blur="commitConfigField(field, $event)"
                           >
@@ -1060,7 +1863,724 @@ if (getCurrentScope()) {
                     />
                   </template>
                 </AppDialog>
+
+                <AppDialog
+                  v-model:open="grainOpen"
+                  title="Edges &amp; grain"
+                  description="Outline, grain direction, router edge profiles, and edge banding per panel role. Feeds the 3D preview, cutlist, and tape report."
+                >
+                  <div class="flex flex-wrap items-center justify-end gap-1 border-b border-default pb-3">
+                    <UButton
+                      icon="i-lucide-rotate-ccw"
+                      label="Clear all"
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      aria-label="Reset outlines, grain, router profiles, and edge banding"
+                      class="active:scale-[0.97] transition-transform duration-150"
+                      @click="resetPanelAttributes(props.ydoc); resetRouterProfiles(props.ydoc); resetPanelOutlines(props.ydoc)"
+                    />
+                  </div>
+
+                  <div class="max-h-[min(26rem,60vh)] space-y-3 overflow-y-auto pr-1 text-xs">
+                    <section
+                      v-for="role in ALL_PANEL_ROLES"
+                      :key="role"
+                      class="rounded-lg bg-muted/40 p-2.5"
+                    >
+                      <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                        {{ PANEL_ROLE_LABEL[role] }}
+                      </h4>
+                      <div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+                        <span class="text-muted">Grain</span>
+                        <USelect
+                          :model-value="panelAttributesFor(role).grain"
+                          :items="GRAIN_DIRECTIONS"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          :aria-label="`Grain direction for ${PANEL_ROLE_LABEL[role]}`"
+                          @update:model-value="setGrain(role, $event as never)"
+                        />
+
+                        <span class="text-muted">Shape</span>
+                        <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <USelect
+                            :model-value="outlineFor(role).shape"
+                            :items="outlineShapes"
+                            value-key="value"
+                            label-key="label"
+                            size="xs"
+                            class="min-w-32 flex-1"
+                            :aria-label="`Panel outline for ${PANEL_ROLE_LABEL[role]}`"
+                            @update:model-value="setPanelOutline(props.ydoc, role, { shape: $event as never })"
+                          />
+                          <span
+                            v-if="outlineFor(role).shape !== 'rectangle' && outlineFor(role).shape !== 'custom'"
+                            class="flex items-center gap-1"
+                          >
+                            <input
+                              :value="Math.round(outlineFor(role).amount * 100)"
+                              type="text"
+                              inputmode="numeric"
+                              class="w-14 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              :aria-label="`Shape amount for ${PANEL_ROLE_LABEL[role]}`"
+                              @keydown.enter.prevent="commitOutlineAmount(role, $event)"
+                              @blur="commitOutlineAmount(role, $event)"
+                            >
+                            <span class="text-dimmed">%</span>
+                          </span>
+                        </div>
+
+                        <span class="text-muted">Edge profile</span>
+                        <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <USelect
+                            :model-value="routerProfileFor(role).kind"
+                            :items="routerProfileKinds"
+                            value-key="value"
+                            label-key="label"
+                            size="xs"
+                            class="min-w-32 flex-1"
+                            :aria-label="`Router edge profile for ${PANEL_ROLE_LABEL[role]}`"
+                            @update:model-value="setProfileKind(role, $event as never)"
+                          />
+                          <span
+                            v-if="routerProfileFor(role).kind !== 'none'"
+                            class="flex items-center gap-1"
+                          >
+                            <input
+                              :value="toMm(routerProfileFor(role).bitSize)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-14 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              :aria-label="`Router bit size for ${PANEL_ROLE_LABEL[role]}`"
+                              @keydown.enter.prevent="commitProfileBitSize(role, $event)"
+                              @blur="commitProfileBitSize(role, $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </div>
+
+                        <template v-if="routerProfileFor(role).kind !== 'none'">
+                          <span class="self-start pt-1 text-muted">Routed edges</span>
+                          <div class="flex flex-wrap gap-x-3 gap-y-1">
+                            <label
+                              v-for="edge in PANEL_EDGES"
+                              :key="edge"
+                              class="flex items-center gap-1.5"
+                            >
+                              <UCheckbox
+                                :model-value="routerProfileFor(role).edges[edge]"
+                                size="sm"
+                                :aria-label="`Rout the ${PANEL_EDGE_LABEL[edge].toLowerCase()} edge of ${PANEL_ROLE_LABEL[role]}`"
+                                @update:model-value="toggleProfileEdge(role, edge, $event === true)"
+                              />
+                              <span class="text-dimmed">{{ PANEL_EDGE_LABEL[edge] }}</span>
+                            </label>
+                          </div>
+                        </template>
+
+                        <template v-if="profileBandConflicts(role).length > 0">
+                          <span />
+                          <p class="text-warning">
+                            Routing would cut the tape off the
+                            {{ profileBandConflicts(role).map(e => PANEL_EDGE_LABEL[e].toLowerCase()).join(', ') }}
+                            edge{{ profileBandConflicts(role).length > 1 ? 's' : '' }}.
+                          </p>
+                        </template>
+
+                        <span class="self-start pt-1 text-muted">Banding</span>
+                        <div class="grid grid-cols-2 gap-1.5">
+                          <label
+                            v-for="edge in PANEL_EDGES"
+                            :key="edge"
+                            class="flex min-w-0 items-center gap-1.5"
+                          >
+                            <span class="w-12 shrink-0 text-dimmed">{{ PANEL_EDGE_LABEL[edge] }}</span>
+                            <USelect
+                              :model-value="panelAttributesFor(role).bands[edge] ?? BARE_EDGE_VALUE"
+                              :items="edgeBandItems"
+                              value-key="value"
+                              label-key="label"
+                              size="xs"
+                              class="min-w-0 flex-1"
+                              :aria-label="`${PANEL_EDGE_LABEL[edge]} edge band for ${PANEL_ROLE_LABEL[role]}`"
+                              @update:model-value="setBand(role, edge, $event as string)"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  <template #footer="{ close }">
+                    <UButton
+                      label="Done"
+                      color="neutral"
+                      variant="outline"
+                      class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
+                      @click="close()"
+                    />
+                  </template>
+                </AppDialog>
               </div>
+
+              <UButton
+                icon="i-lucide-layers"
+                label="Edges &amp; grain"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                block
+                class="justify-center active:scale-[0.97] transition-transform duration-150"
+                aria-label="Open edges and grain settings"
+                @click="grainOpen = true"
+              />
+
+              <UButton
+                icon="i-lucide-square-stack"
+                :label="freePanels.length > 0 ? `Free panels (${freePanels.length})` : 'Free panels'"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                block
+                class="justify-center active:scale-[0.97] transition-transform duration-150"
+                aria-label="Open free panels"
+                @click="freePanelsOpen = true"
+              />
+
+              <AppDialog
+                v-model:open="freePanelsOpen"
+                title="Free panels"
+                description="Boards placed outside the column structure. They join the same cutlist, costing, joinery, and 3D preview."
+              >
+                <div class="space-y-3 text-xs">
+                  <section>
+                    <h4 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Add on plane
+                    </h4>
+                    <div class="grid grid-cols-3 gap-1.5">
+                      <UButton
+                        v-for="plane in panelPlanes"
+                        :key="plane.value"
+                        :label="plane.value"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="justify-center active:scale-[0.97] transition-transform duration-150"
+                        :aria-label="`Add a panel on the ${plane.value} plane`"
+                        :title="plane.hint"
+                        @click="createFreePanel(plane.value)"
+                      />
+                    </div>
+                  </section>
+
+                  <section v-if="freePanels.length > 0">
+                    <h4 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Panels
+                    </h4>
+                    <ul class="max-h-40 space-y-1 overflow-y-auto pr-1">
+                      <li
+                        v-for="panel in freePanels"
+                        :key="panel.id"
+                      >
+                        <button
+                          type="button"
+                          :class="[
+                            'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left transition-colors duration-150',
+                            selectedFreePanelIds.includes(panel.id) ? 'bg-primary/15 text-highlighted' : 'bg-muted/40 text-default hover:bg-elevated',
+                          ]"
+                          :aria-pressed="selectedFreePanelIds.includes(panel.id)"
+                          :aria-label="`Select ${panel.label}`"
+                          @click="toggleFreePanelSelection(panel.id, $event.shiftKey)"
+                        >
+                          <span class="truncate">{{ panel.label }}</span>
+                          <span class="shrink-0 tabular-nums text-dimmed">
+                            {{ toMm(panel.size.x) }}×{{ toMm(panel.size.y) }}×{{ toMm(panel.size.z) }}
+                          </span>
+                        </button>
+                      </li>
+                    </ul>
+                  </section>
+
+                  <section v-if="selectedFreePanels.length > 0">
+                    <h4 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Move &amp; resize
+                    </h4>
+                    <div class="space-y-1.5">
+                      <div
+                        v-for="axis in moveAxes"
+                        :key="axis.axis"
+                        class="flex items-center gap-1.5"
+                      >
+                        <span class="w-4 shrink-0 text-muted">{{ axis.label }}</span>
+                        <UButton
+                          icon="i-lucide-minus"
+                          size="xs"
+                          color="neutral"
+                          variant="soft"
+                          :aria-label="`Move selection back along ${axis.label}`"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="nudgeFreePanels(props.ydoc, selectedFreePanelIds, axis.axis, -1)"
+                        />
+                        <UButton
+                          icon="i-lucide-plus"
+                          size="xs"
+                          color="neutral"
+                          variant="soft"
+                          :aria-label="`Move selection forward along ${axis.label}`"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="nudgeFreePanels(props.ydoc, selectedFreePanelIds, axis.axis, 1)"
+                        />
+                        <span class="ml-2 w-10 shrink-0 text-dimmed">size</span>
+                        <UButton
+                          icon="i-lucide-chevrons-left-right"
+                          size="xs"
+                          color="neutral"
+                          variant="ghost"
+                          :aria-label="`Shrink selection along ${axis.label}`"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="resizeFreePanels(props.ydoc, selectedFreePanelIds, axis.axis, -RESIZE_STEP)"
+                        />
+                        <UButton
+                          icon="i-lucide-chevrons-right-left"
+                          size="xs"
+                          color="neutral"
+                          variant="ghost"
+                          :aria-label="`Grow selection along ${axis.label}`"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="resizeFreePanels(props.ydoc, selectedFreePanelIds, axis.axis, RESIZE_STEP)"
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  <section v-if="selectedFreePanels.length > 0">
+                    <h4 class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Derive &amp; place
+                    </h4>
+                    <div class="flex flex-wrap gap-1.5">
+                      <UButton
+                        v-if="singleSelectedFreePanel"
+                        icon="i-lucide-copy-plus"
+                        label="From face"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        aria-label="Add a panel covering the selected panel's face"
+                        @click="addPanelFromFace(props.ydoc, singleSelectedFreePanel.id)"
+                      />
+                      <UButton
+                        v-if="selectedFreePanels.length === 2"
+                        icon="i-lucide-between-horizontal-start"
+                        label="Fill between"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        aria-label="Add a panel filling the gap between the two selected panels"
+                        @click="addPanelBetween(props.ydoc, selectedFreePanelIds[0], selectedFreePanelIds[1])"
+                      />
+                      <UButton
+                        icon="i-lucide-align-center"
+                        label="Centre"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        aria-label="Centre the selection on the other panels"
+                        @click="centerFreePanels(props.ydoc, selectedFreePanelIds)"
+                      />
+                      <UButton
+                        v-if="selectedFreePanels.length >= 3"
+                        icon="i-lucide-align-vertical-space-around"
+                        label="Space evenly"
+                        size="xs"
+                        color="neutral"
+                        variant="soft"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        aria-label="Distribute the selected panels evenly in height"
+                        @click="spaceFreePanelsEqually(props.ydoc, selectedFreePanelIds, 'y')"
+                      />
+                    </div>
+                    <div
+                      v-if="singleSelectedFreePanel"
+                      class="mt-1.5 flex flex-wrap items-center gap-1.5"
+                    >
+                      <span class="text-dimmed">Copy to</span>
+                      <UButton
+                        v-for="plane in panelPlanes"
+                        :key="plane.value"
+                        :label="plane.value"
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        :aria-label="`Copy the selected panel onto the ${plane.value} plane`"
+                        @click="duplicateFreePanelToPlane(props.ydoc, singleSelectedFreePanel.id, plane.value)"
+                      />
+                    </div>
+                  </section>
+
+                  <section
+                    v-if="singleSelectedFreePanel"
+                    class="rounded-lg bg-muted/40 p-2.5"
+                  >
+                    <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      {{ singleSelectedFreePanel.label }}
+                    </h4>
+                    <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-2 gap-y-1.5">
+                      <span />
+                      <span class="text-center text-dimmed">Size (mm)</span>
+                      <span class="text-center text-dimmed">Centre (mm)</span>
+                      <template
+                        v-for="axis in moveAxes"
+                        :key="axis.axis"
+                      >
+                        <span class="text-muted">{{ axis.label }}</span>
+                        <input
+                          :value="toMm(singleSelectedFreePanel.size[axis.axis])"
+                          type="text"
+                          inputmode="decimal"
+                          class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                          :aria-label="`Panel size along ${axis.label} in millimetres`"
+                          @keydown.enter.prevent="commitFreePanelMetric(singleSelectedFreePanel, 'size', axis.axis, $event)"
+                          @blur="commitFreePanelMetric(singleSelectedFreePanel, 'size', axis.axis, $event)"
+                        >
+                        <input
+                          :value="toMm(singleSelectedFreePanel.position[axis.axis])"
+                          type="text"
+                          inputmode="decimal"
+                          class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                          :aria-label="`Panel centre along ${axis.label} in millimetres`"
+                          @keydown.enter.prevent="commitFreePanelMetric(singleSelectedFreePanel, 'position', axis.axis, $event)"
+                          @blur="commitFreePanelMetric(singleSelectedFreePanel, 'position', axis.axis, $event)"
+                        >
+                      </template>
+                      <span class="text-muted">Part</span>
+                      <USelect
+                        :model-value="singleSelectedFreePanel.role"
+                        :items="freePanelRoleItems"
+                        value-key="value"
+                        label-key="label"
+                        size="xs"
+                        class="col-span-2 min-w-0"
+                        aria-label="Panel role, which drives its material, grain, banding, and drilling"
+                        @update:model-value="updateFreePanel(props.ydoc, singleSelectedFreePanel.id, { role: $event as never })"
+                      />
+                    </div>
+                  </section>
+
+                  <UButton
+                    v-if="selectedFreePanels.length > 0"
+                    icon="i-lucide-trash-2"
+                    :label="`Delete ${selectedFreePanels.length} panel${selectedFreePanels.length > 1 ? 's' : ''}`"
+                    size="xs"
+                    color="error"
+                    variant="soft"
+                    block
+                    class="justify-center active:scale-[0.97] transition-transform duration-150"
+                    aria-label="Delete the selected free panels"
+                    @click="deleteSelectedFreePanels"
+                  />
+
+                  <p
+                    v-if="freePanels.length === 0"
+                    class="text-dimmed"
+                  >
+                    No free panels yet. Add one on a plane above — it will appear in the 3D preview and the cutlist.
+                  </p>
+                </div>
+
+                <template #footer="{ close }">
+                  <UButton
+                    label="Done"
+                    color="neutral"
+                    variant="outline"
+                    class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
+                    @click="close()"
+                  />
+                </template>
+              </AppDialog>
+
+              <UButton
+                icon="i-lucide-drill"
+                :label="activeDrillingRuleCount > 0 ? `Drilling (${activeDrillingRuleCount})` : 'Drilling'"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                block
+                class="justify-center active:scale-[0.97] transition-transform duration-150"
+                aria-label="Open drilling settings"
+                @click="drillingOpen = true"
+              />
+
+              <AppDialog
+                v-model:open="drillingOpen"
+                title="Drilling"
+                description="Hole patterns re-applied to every panel of a role on each compile, so they follow the design as it changes."
+              >
+                <div class="flex flex-wrap items-center justify-end gap-1 border-b border-default pb-3">
+                  <UButton
+                    icon="i-lucide-rotate-ccw"
+                    label="Clear all"
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    aria-label="Remove every drilling rule"
+                    class="active:scale-[0.97] transition-transform duration-150"
+                    @click="resetDrilling(props.ydoc)"
+                  />
+                </div>
+
+                <div class="max-h-[min(28rem,62vh)] space-y-3 overflow-y-auto pr-1 text-xs">
+                  <section
+                    v-for="role in ALL_PANEL_ROLES"
+                    :key="role"
+                    class="rounded-lg bg-muted/40 p-2.5"
+                  >
+                    <div class="mb-2 flex items-center justify-between gap-2">
+                      <h4 class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                        {{ PANEL_ROLE_LABEL[role] }}
+                      </h4>
+                      <UButton
+                        icon="i-lucide-plus"
+                        label="Add pattern"
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        :aria-label="`Add a drilling pattern to ${PANEL_ROLE_LABEL[role]}`"
+                        class="active:scale-[0.97] transition-transform duration-150"
+                        @click="addDrillingRule(props.ydoc, role)"
+                      />
+                    </div>
+
+                    <p
+                      v-if="drillingRulesFor(role).length === 0"
+                      class="text-dimmed"
+                    >
+                      No drilling on this part.
+                    </p>
+
+                    <article
+                      v-for="rule in drillingRulesFor(role)"
+                      :key="rule.id"
+                      class="mb-2 space-y-2 rounded-md bg-default p-2 last:mb-0"
+                    >
+                      <div class="flex flex-wrap items-center gap-2">
+                        <USwitch
+                          :model-value="rule.enabled"
+                          size="sm"
+                          :aria-label="`Enable this drilling pattern on ${PANEL_ROLE_LABEL[role]}`"
+                          @update:model-value="updateRule(role, rule.id, { enabled: $event })"
+                        />
+                        <USelect
+                          :model-value="rule.operationType"
+                          :items="drillOperationTypes"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          class="min-w-36 flex-1"
+                          aria-label="Hole type"
+                          @update:model-value="updateRule(role, rule.id, { operationType: $event as never })"
+                        />
+                        <UButton
+                          icon="i-lucide-trash-2"
+                          size="xs"
+                          color="error"
+                          variant="ghost"
+                          aria-label="Remove this drilling pattern"
+                          class="active:scale-[0.97] transition-transform duration-150"
+                          @click="removeDrillingRule(props.ydoc, role, rule.id)"
+                        />
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                        <label class="flex items-center justify-between gap-2">
+                          <span class="text-muted">Ø</span>
+                          <span class="flex items-center gap-1">
+                            <input
+                              :value="toMm(rule.diameter)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              aria-label="Hole diameter in millimetres"
+                              @keydown.enter.prevent="commitRuleMm(role, rule.id, 'diameter', $event)"
+                              @blur="commitRuleMm(role, rule.id, 'diameter', $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </label>
+
+                        <label
+                          v-if="rule.operationType !== 'through-hole'"
+                          class="flex items-center justify-between gap-2"
+                        >
+                          <span class="text-muted">Depth</span>
+                          <span class="flex items-center gap-1">
+                            <input
+                              :value="toMm(rule.depth)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              aria-label="Hole depth in millimetres"
+                              @keydown.enter.prevent="commitRuleMm(role, rule.id, 'depth', $event)"
+                              @blur="commitRuleMm(role, rule.id, 'depth', $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </label>
+
+                        <template v-if="rule.operationType === 'countersink' || rule.operationType === 'counterbore'">
+                          <label class="flex items-center justify-between gap-2">
+                            <span class="text-muted">Head Ø</span>
+                            <span class="flex items-center gap-1">
+                              <input
+                                :value="toMm(rule.headDiameter)"
+                                type="text"
+                                inputmode="decimal"
+                                class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                                aria-label="Head recess diameter in millimetres"
+                                @keydown.enter.prevent="commitRuleMm(role, rule.id, 'headDiameter', $event)"
+                                @blur="commitRuleMm(role, rule.id, 'headDiameter', $event)"
+                              >
+                              <span class="text-dimmed">mm</span>
+                            </span>
+                          </label>
+                          <label
+                            v-if="rule.operationType === 'counterbore'"
+                            class="flex items-center justify-between gap-2"
+                          >
+                            <span class="text-muted">Head depth</span>
+                            <span class="flex items-center gap-1">
+                              <input
+                                :value="toMm(rule.headDepth)"
+                                type="text"
+                                inputmode="decimal"
+                                class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                                aria-label="Head recess depth in millimetres"
+                                @keydown.enter.prevent="commitRuleMm(role, rule.id, 'headDepth', $event)"
+                                @blur="commitRuleMm(role, rule.id, 'headDepth', $event)"
+                              >
+                              <span class="text-dimmed">mm</span>
+                            </span>
+                          </label>
+                        </template>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                        <USelect
+                          :model-value="rule.pattern.kind"
+                          :items="patternKinds"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          aria-label="Pattern kind"
+                          @update:model-value="updateRulePattern(role, rule.id, { kind: $event as never })"
+                        />
+                        <USelect
+                          :model-value="rule.pattern.anchor"
+                          :items="patternAnchors"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          aria-label="Pattern anchor edge"
+                          @update:model-value="updateRulePattern(role, rule.id, { anchor: $event as never })"
+                        />
+                        <USelect
+                          :model-value="rule.face"
+                          :items="drillFaces"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          aria-label="Face drilled from"
+                          @update:model-value="updateRule(role, rule.id, { face: $event as never })"
+                        />
+                        <USelect
+                          :model-value="rule.hardwareCode ?? NO_HARDWARE_VALUE"
+                          :items="drillHardwareItems"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          aria-label="Hardware seated by this drilling"
+                          @update:model-value="updateRule(role, rule.id, { hardwareCode: $event === NO_HARDWARE_VALUE ? null : String($event) })"
+                        />
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                        <label class="flex items-center justify-between gap-2">
+                          <span class="text-muted">Count</span>
+                          <input
+                            :value="rule.pattern.count"
+                            type="text"
+                            inputmode="numeric"
+                            class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                            aria-label="Holes along the pattern"
+                            @keydown.enter.prevent="commitPatternCount(role, rule.id, 'count', $event)"
+                            @blur="commitPatternCount(role, rule.id, 'count', $event)"
+                          >
+                        </label>
+                        <label
+                          v-if="rule.pattern.kind === 'grid'"
+                          class="flex items-center justify-between gap-2"
+                        >
+                          <span class="text-muted">Rows</span>
+                          <input
+                            :value="rule.pattern.rows"
+                            type="text"
+                            inputmode="numeric"
+                            class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                            aria-label="Rows of holes"
+                            @keydown.enter.prevent="commitPatternCount(role, rule.id, 'rows', $event)"
+                            @blur="commitPatternCount(role, rule.id, 'rows', $event)"
+                          >
+                        </label>
+                        <label class="flex items-center justify-between gap-2">
+                          <span class="text-muted">Spacing</span>
+                          <span class="flex items-center gap-1">
+                            <input
+                              :value="toMm(rule.pattern.spacing)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              aria-label="Centre-to-centre spacing in millimetres"
+                              @keydown.enter.prevent="commitPatternMm(role, rule.id, 'spacing', $event)"
+                              @blur="commitPatternMm(role, rule.id, 'spacing', $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </label>
+                        <label class="flex items-center justify-between gap-2">
+                          <span class="text-muted">Inset</span>
+                          <span class="flex items-center gap-1">
+                            <input
+                              :value="toMm(rule.pattern.inset)"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-16 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none transition-colors duration-150 focus:bg-elevated"
+                              aria-label="Inset from the anchor edge in millimetres"
+                              @keydown.enter.prevent="commitPatternMm(role, rule.id, 'inset', $event)"
+                              @blur="commitPatternMm(role, rule.id, 'inset', $event)"
+                            >
+                            <span class="text-dimmed">mm</span>
+                          </span>
+                        </label>
+                      </div>
+                    </article>
+                  </section>
+                </div>
+
+                <template #footer="{ close }">
+                  <UButton
+                    label="Done"
+                    color="neutral"
+                    variant="outline"
+                    class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
+                    @click="close()"
+                  />
+                </template>
+              </AppDialog>
             </div>
           </div>
         </div>

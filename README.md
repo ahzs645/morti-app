@@ -10,7 +10,10 @@ Open-source parametric furniture design for cabinets, shelves, wardrobes, and ot
 
 ## Features
 
-- Parametric furniture editor with columns, shelves, drawers, doors, and metric constraints.
+- Parametric furniture editor with columns, shelves, drawers, doors, frames, and metric constraints.
+- Free-panel layer for boards placed outside the column structure.
+- Machining: drilling patterns, joinery styles, router edge profiles, and non-rectangular panel shapes.
+- Grain direction, edge banding with a tape report, multi-unit display, and wood weight and cost.
 - Local-first project storage with `.morti` import/export.
 - 3D assembly preview, technical rendering, and GLB/GLTF export.
 - Cutlist and panel operation views for manufacturing-oriented output.
@@ -52,6 +55,11 @@ parametric data model, how the assembly compiler turns modules into panels, and 
 step-by-step recipe for wiring a new component through types, the compiler,
 persistence, cutlist, 3D rendering, and the designer UI — using the built-in
 `shelves` component as a worked example.
+
+Morti ports the tool set of the FreeCAD
+[Woodworking workbench](https://github.com/dprojects/Woodworking). The `/tools`
+page in the app maps all 158 of its toolbar entries to where each one lives
+here, and `docs/woodworking-port.md` lists the known gaps.
 
 ## Requirements
 

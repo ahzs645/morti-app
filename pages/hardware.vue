@@ -66,7 +66,24 @@ function formatDims(spec: HardwareSpec): string {
             >
               <td class="border-b border-default px-3 py-2 font-semibold text-highlighted">{{ item.code }}</td>
               <td class="border-b border-default px-3 py-2">
-                <HardwareDrawingCanvas :spec="item" />
+                <!-- Only bundled assets get a canvas; the rest would request a
+                     file that is not there, get the SPA fallback back, and
+                     fail in the loader with nothing shown to the reader. -->
+                <HardwareDrawingCanvas
+                  v-if="item.modelBundled"
+                  :spec="item"
+                />
+                <div
+                  v-else
+                  class="flex size-28 flex-col items-center justify-center gap-1 rounded-md bg-muted/40 px-2 text-center shadow-sm ring-1 ring-default/60"
+                  :aria-label="`${item.code} ${item.name}: no 3D model bundled`"
+                >
+                  <UIcon
+                    name="i-lucide-box"
+                    class="size-5 text-dimmed"
+                  />
+                  <span class="text-[10px] leading-tight text-dimmed">No model bundled</span>
+                </div>
               </td>
               <td class="border-b border-default px-3 py-2 text-highlighted">{{ item.name }}</td>
               <td class="border-b border-default px-3 py-2 text-muted">{{ item.kind }}</td>

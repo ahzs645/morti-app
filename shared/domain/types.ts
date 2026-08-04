@@ -1,4 +1,14 @@
-export type ModuleType = 'shelf' | 'shelves' | 'dividers' | 'drawer' | 'doors' | 'left-door' | 'right-door'
+import type { DrillingMap } from './drilling'
+import type { JoinerySettings } from './joinery'
+import type { RouterProfileMap } from './router-profiles'
+import type { FreePanel } from './free-panels'
+import type { OutlineMap } from './outline'
+import type { ProjectVariable } from './variables'
+import type { TransportLimits } from './occupied-space'
+import type { PanelAttributeMap } from './panel-attributes'
+import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
+
+export type ModuleType = 'shelf' | 'shelves' | 'dividers' | 'drawer' | 'doors' | 'left-door' | 'right-door' | 'frame'
 
 export interface FurnitureModule {
   id: string
@@ -7,6 +17,8 @@ export interface FurnitureModule {
   drawerCount?: number // 1..32, drawer only
   shelfCount?: number // 1..16, internal shelf boards, 'shelves' only
   dividerCount?: number // 1..16, vertical divider boards, 'dividers' only
+  frameRailCount?: number // 0..8, intermediate horizontal rails, 'frame' only
+  frameStileCount?: number // 0..8, intermediate vertical stiles, 'frame' only
 }
 
 export interface FurnitureColumn {
@@ -36,10 +48,75 @@ export interface FurnitureConfig {
   maxDrawerHeight: number
 }
 
+/** Which rate a project prices against. Mirrors `magicSettings`, which offers
+ *  both a per-volume (timber) and a per-area (sheet goods) price. */
+export type CostBasis = 'volume' | 'area'
+
+/**
+ * Presentation and reporting preferences — the Morti analogue of
+ * `magicSettings` plus the unit/precision selectors in `getDimensions`.
+ *
+ * These never affect stored geometry (which is always metres on a 1 mm grid);
+ * they only change how numbers are displayed, parsed, and reported.
+ */
+export interface ProjectSettings {
+  lengthUnit: LengthUnit
+  lengthPrecision: number
+  /** Woodworking reports edge banding in its own unit; so do we. */
+  edgeUnit: LengthUnit
+  edgePrecision: number
+  areaUnit: AreaUnit
+  areaPrecision: number
+  volumeUnit: VolumeUnit
+  weightUnit: WeightUnit
+  /** Denominator used when `lengthUnit` or `edgeUnit` is `fraction`. */
+  fractionDenominator: FractionDenominator
+  /** ISO 4217 code used to format costs. */
+  currency: string
+  costBasis: CostBasis
+  reportWeight: boolean
+  reportCost: boolean
+  reportOperations: boolean
+}
+
+export const PROJECT_SETTINGS_KEYS: (keyof ProjectSettings)[] = [
+  'lengthUnit',
+  'lengthPrecision',
+  'edgeUnit',
+  'edgePrecision',
+  'areaUnit',
+  'areaPrecision',
+  'volumeUnit',
+  'weightUnit',
+  'fractionDenominator',
+  'currency',
+  'costBasis',
+  'reportWeight',
+  'reportCost',
+  'reportOperations',
+]
+
 export interface FurnitureDoc {
   schemaVersion: number
   lastAppliedMigrationId: string | null
   config: FurnitureConfig
+  settings: ProjectSettings
+  /** Grain direction and edge banding, keyed by `PanelRole`. */
+  panelAttributes: PanelAttributeMap
+  /** Drilling rules re-applied on every compile, keyed by `PanelRole`. */
+  drilling: DrillingMap
+  /** Joint style derived at every panel contact on each compile. */
+  joinery: JoinerySettings
+  /** Router edge profiles, keyed by `PanelRole`. */
+  routerProfiles: RouterProfileMap
+  /** Free-standing panels placed outside the columns → modules structure. */
+  freePanels: FreePanel[]
+  /** Non-rectangular panel outlines, keyed by `PanelRole`. */
+  outlines: OutlineMap
+  /** Named variables driving config fields. */
+  variables: ProjectVariable[]
+  /** Door/van limits the assembled piece is checked against. */
+  transport: TransportLimits
   columns: FurnitureColumn[]
 }
 
@@ -157,8 +234,65 @@ export type PanelRole =
   | 'drawer-side'
   | 'drawer-back'
   | 'drawer-bottom'
+  /** Horizontal member of a face frame (panel2frame). */
+  | 'frame-rail'
+  /** Vertical member of a face frame (panel2frame). */
+  | 'frame-stile'
+  /** Square block glued into a carcass corner (cornerBlock). */
+  | 'corner-block'
+  /** Diagonal brace across a carcass corner (cornerBrace). */
+  | 'corner-brace'
 
-export type OperationType = 'through-hole' | 'rail-cut'
+/**
+ * Machining operations subtracted from a panel.
+ *
+ * `through-hole` and `rail-cut` are Morti's originals. The rest port
+ * Woodworking's drilling and fixture toolbars: `drillHoles`,
+ * `drillCountersinks`, `drillCounterbores`, `drillCounterbores2x`,
+ * `magicDriller`, `magicDowels`, `magicCNC`, `magicFixture`, and the
+ * groove/dado/rabbet cuts `magicCut` and `magicKnife` make.
+ */
+export type OperationType =
+  | 'through-hole'
+  | 'rail-cut'
+  /** Blind hole for a dowel, shelf pin, or cam bolt. */
+  | 'dowel-hole'
+  /** Conical seat so a flat-head screw sits flush. */
+  | 'countersink'
+  /** Flat-bottomed recess so a screw head or cam sits below the surface. */
+  | 'counterbore'
+  /** Flat-bottomed CNC pocket of arbitrary size. */
+  | 'pocket'
+  /** Slot cut along the grain, e.g. for a back panel. */
+  | 'groove'
+  /** Slot cut across the grain, e.g. to seat a shelf. */
+  | 'dado'
+  /** Step cut along a panel edge. */
+  | 'rabbet'
+
+export const OPERATION_TYPES: OperationType[] = [
+  'through-hole',
+  'rail-cut',
+  'dowel-hole',
+  'countersink',
+  'counterbore',
+  'pocket',
+  'groove',
+  'dado',
+  'rabbet',
+]
+
+export const OPERATION_TYPE_LABEL: Record<OperationType, string> = {
+  'through-hole': 'Through hole',
+  'rail-cut': 'Rail cut',
+  'dowel-hole': 'Dowel hole',
+  'countersink': 'Countersink',
+  'counterbore': 'Counterbore',
+  'pocket': 'Pocket',
+  'groove': 'Groove',
+  'dado': 'Dado',
+  'rabbet': 'Rabbet',
+}
 
 export interface PanelOperation {
   id: string
@@ -166,13 +300,17 @@ export interface PanelOperation {
   targetPanelKey: string
   face?: 'front' | 'back'
   center?: { x: number, y: number }
-  // through-hole
+  // through-hole / dowel-hole / countersink / counterbore
   cx?: number
   cy?: number
   diameter?: number
   depth?: number
   through?: boolean
-  // rail-cut
+  /** Countersink/counterbore only: the wider head recess diameter. */
+  headDiameter?: number
+  /** Counterbore only: how deep the head recess goes. */
+  headDepth?: number
+  // rail-cut / pocket / groove / dado / rabbet
   x?: number
   y?: number
   width?: number
@@ -180,6 +318,8 @@ export interface PanelOperation {
   length?: number
   rotation?: number
   sourceModuleId?: string
+  /** Hardware code this operation exists to seat, for the BOM. */
+  hardwareCode?: string
 }
 
 export interface CompiledPanel {
@@ -224,6 +364,9 @@ export interface HardwareSpec {
     | 'drawer-slide-left'
     | 'back-panel-clip'
     | 'adhesive-bottom-pad'
+    | 'confirmat-screw'
+    | 'pocket-screw'
+    | 'shelf-pin'
   name: string
   unit: 'piece'
   diameterMm?: number
@@ -232,7 +375,11 @@ export interface HardwareSpec {
   heightMm?: number
   notes?: string
   included: boolean
+  /** Intended asset path. May point at a file that is not bundled yet. */
   modelGlbSrc: string
+  /** Whether `modelGlbSrc` actually ships in `public/`. Only bundled models
+   *  get a 3D preview; the rest would fail to load and render nothing. */
+  modelBundled: boolean
   links?: { label: string; url: string }[]
   buyLinks?: { label: string; url: string }[]
 }
@@ -248,8 +395,12 @@ export const PANEL_ROLE_SHORT_CODE: Record<PanelRole, string> = {
   'drawer-side': 'DRS',
   'drawer-back': 'DRB',
   'drawer-bottom': 'DBM',
+  'frame-rail': 'FR',
+  'frame-stile': 'FS',
+  'corner-block': 'CBK',
+  'corner-brace': 'CBR',
 }
 
-export const DESIGN_SCHEMA_VERSION = 3
+export const DESIGN_SCHEMA_VERSION = 4
 export const ASSEMBLY_COMPILER_VERSION = 1
 export const TECHNICAL_RENDERER_VERSION = 1

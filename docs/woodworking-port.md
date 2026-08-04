@@ -23,17 +23,45 @@ cutlist, and `.morti` export "for free".
 
 ## Capability map: Woodworking → Morti
 
-| Woodworking capability | Morti equivalent | Status |
+The workbench ships **158 toolbar entries across 23 toolbars** — 144 workbench
+tools plus 14 FreeCAD built-ins it borrows. The full per-tool mapping is a live
+page in the app at **`/tools`** (source: `shared/domain/woodworking-tools.ts`),
+which is the place to look up any individual tool. The table here is the
+capability-level summary.
+
+| Woodworking capability | Morti equivalent | Where |
 | --- | --- | --- |
-| `magicStart` (furniture skeleton) | `columns → modules` model + designer | Exists |
-| Panel furniture parts (sides, shelves, backs) | `PanelRole`s emitted by the compiler | Exists + extended |
-| Internal shelves inside a bay | **`shelves` module** | Added |
-| Vertical dividers / mullions in a bay | **`dividers` module** | Added |
-| `getDimensions` (cut list) | Cutlist view (`shared/domain/cutlist.ts`) | Exists |
-| `sheet2export` (CSV/JSON/HTML/MD) | Cutlist export (`shared/domain/cutlist-export.ts`) | Added |
-| `magicColors` / materials | `PublicStyle` materials + style panel | Exists |
-| `magicDowels` / `magicDriller` | `PanelOperation` (`through-hole`, `rail-cut`) | Partial — UI to add |
-| Multi-unit (mm/cm/in/board-ft) | metric-only today | To add |
+| `magicStart`, furniture skeleton | `columns → modules` + designer | Designer |
+| `panelDefault*`, `panelMove*`, `panelResize*`, `panelFace*`, `panelBetween*`, `panelCopy*` | Free-panel layer (`shared/domain/free-panels.ts`) | Designer → Free panels |
+| `magicSettings`, unit and precision options | `ProjectSettings` (`shared/domain/units.ts`) | Project settings |
+| `getDimensions`, weight and cost | Cutlist + `shared/domain/costing.ts` | Cutlist |
+| `sheet2export` | `shared/domain/cutlist-export.ts` | Cutlist → Export |
+| `grainH/V/X` | `shared/domain/panel-attributes.ts` | Edges & grain |
+| `addVeneer`, `band*` | `shared/domain/edgeband.ts` | Edges & grain + Cutlist |
+| `magicDriller`, `drill*`, `magicDowels`, `magicCNC` | `shared/domain/operations.ts` + `drilling.ts` | Drilling |
+| `magicJoints` and the joint cutters | `shared/domain/joinery.ts` | Project settings → Joint style |
+| `router*`, `multiPocket*` | `shared/domain/router-profiles.ts` | Edges & grain → Edge profile |
+| `panelSide*`, `panelBackOut`, `panelCoverXY`, `panel2taper`, `roundCurve` | `shared/domain/outline.ts` | Edges & grain → Shape |
+| `panel2frame` | `frame` module type | Designer → module type |
+| `Std_VarSet`, spreadsheet + `showAlias` | `shared/domain/variables.ts` | Project settings → Variables |
+| `showOccupiedSpace` + transport limits | `shared/domain/occupied-space.ts` | Cutlist summary |
+| `magicColors`, `setTextures`, `makeBeautiful` | `PublicStyle` materials | Style panel |
+
+### Known gaps
+
+Honest list of what is *not* covered, so the `/tools` page and this doc agree:
+
+- **Custom outlines have no editor.** `sketch2pad` / `wires2pad` outlines are
+  modelled, persisted, and extruded, but presets are the only way to author a
+  shape from the UI.
+- **No external geometry import** (`addExternal`).
+- **No interactive measuring or vertex picking** (`magicMeasure`, `showVertex`,
+  `selectVertex`, `showMeasurements` on the model itself).
+- **No arbitrary rotation** (`magicAngle`, `panel2angle`) — the panel model is
+  axis-aligned by design.
+- **Corner blocks and braces** have parts and costing but no generator.
+- **FreeCAD IDE tooling** (`debugInfo`, `scanObjects`, dependency graph, macro
+  runner, `PartDesign_*`) is deliberately out of scope.
 
 The model below is what makes each new row tractable.
 
@@ -130,9 +158,13 @@ Follow these in order. Each bullet links the change to the file you edit.
    - Add the input row in the inspector `<template>`, gated on
      `selectedTypeValue === '<type>'`.
 
-8. **2D front view (optional polish)** — `components/project/ProjectDesignerFrontView.vue`
+8. **2D front view** — `components/project/ProjectDesignerFrontView.vue`
    - Add a visual branch so the flat designer reflects the part (shelves draw
      evenly-spaced divider lines, like drawer separators).
+   - **Not optional if the component has visible structure.** The flat view is
+     the primary editing surface; a component that renders in 3D but not here
+     reads as broken. The `frame` type shipped without a branch and drew as an
+     empty rectangle while the 3D showed a full face frame.
 
 9. **AI generation (optional)** — `shared/domain/ai-furniture.ts`
    - Add the type to that file's local `MODULE_TYPES`/compact map and normalize the
@@ -172,6 +204,30 @@ For headless screenshots in CI/dev containers, Chromium is preinstalled; launch
 Playwright with `--use-gl=angle --use-angle=swiftshader` so the Three.js canvas
 renders without a GPU.
 
+### Comparing the flat view against the 3D
+
+The flat front view is hand-drawn HTML; the 3D comes out of the parametric
+compiler. Nothing keeps the two in step, so they drift silently — a module type
+drawn as a solid front on the left and an open bay on the right looks fine in
+either pane alone. `scripts/compare-views.mjs` captures both panes for one
+fixture per option and writes a contact sheet that puts each pair side by side:
+
+```bash
+npm run dev                          # in another terminal
+node scripts/compare-views.mjs       # → .screenshots/compare/index.html
+node scripts/compare-views.mjs --case=frame --case=dividers
+```
+
+It points the 3D camera straight down −Z first, so both panes show the same
+elevation and can be compared feature for feature rather than through a
+foreshortened three-quarter view. Cases where only the 3D can show something —
+edge profiles, drilling, joinery bores — say so in their `expect` note; that is
+the difference between a known limit of a front elevation and a bug.
+
+Fixture shapes live in `scripts/lib/morti-fixture.mjs`, shared with
+`make-demo-fixture.mjs`, so the schema version and branch encodings are written
+in one place.
+
 ## Second worked example: the `dividers` component
 
 `dividers` is the vertical counterpart to `shelves` — N evenly-spaced **vertical**
@@ -203,7 +259,50 @@ emitted in **millimetres** — the practical cut-list unit and the app's underly
 1 mm metric grid — even though the on-screen table shows metres. To add another
 format, extend `CutlistFormat` + `serializeCutlist` and the `CUTLIST_FORMATS` list.
 
+## Document schema
+
+The port added several branches to the Y.Doc alongside `config` and `columns`:
+
+| Branch | Holds | Added by |
+| --- | --- | --- |
+| `settings` | units, precision, currency, report toggles | units port |
+| `panelAttributes` | grain direction + edge banding, per `PanelRole` | grain/veneer port |
+| `drilling` | hole-pattern rules, per `PanelRole` | drilling port |
+| `joinery` | joint style and fastener sizing | joinery port |
+| `routerProfiles` | edge profile, per `PanelRole` | router port |
+| `outlines` | panel shape, per `PanelRole` | outline port |
+| `freePanels` | free-standing boards | free-panel layer |
+| `variables`, `transport` | named variables, transport limits | variables port |
+
+Only the free-panel layer needed a schema bump (3 → 4), because it changes what
+a design *is* rather than how it is presented. Everything else is additive and
+defaults to a no-op, so a document written before the port compiles to exactly
+the panels it did before — see `shared/yjs/migration.test.ts`.
+
+Two design decisions run through all of it:
+
+1. **Attributes key off `PanelRole`, not panel keys.** Carcass panels are
+   regenerated on every edit, so a panel has no stable hand-picked identity —
+   its key changes as soon as a column is inserted. The role is what survives.
+2. **Tools become re-applied rules, not one-shot writes.** Upstream, clicking
+   `magicDriller` writes holes into the model. Here the compiler rebuilds the
+   panels on every edit, so the durable form is a rule that is re-derived each
+   time — which also means the holes follow the panel as it resizes.
+
 ## What's next (good follow-on ports)
 
-- **Drilling/dowels UI** — surface `PanelOperation` editing (`magicDriller`).
-- **Multi-unit display** — a presentation-layer unit toggle (mm/cm/in/board-ft).
+- **Custom outline editor** — a point editor for `sketch2pad` / `wires2pad`.
+- **Outlines in the flat view** — door fronts are clipped to their outline, but
+  drawer fronts are not: a drawer module holds N stacked fronts drawn as
+  separators over a single fill, so clipping the module would cut only the top
+  drawer. The bands need to become real elements first.
+
+  Note this is narrower than it first appears. An outline lives in its panel's
+  own width x height plane, and only the roles the compiler emits as
+  `vertical-xy` — door and drawer fronts, the back panel, frame members — have
+  that plane facing the viewer. A shaped `vertical-side` is arched across its
+  *depth*, so a front elevation genuinely cannot show it; that is geometry, not
+  a missing feature.
+- **Measurement overlay** — dimension annotations on the 3D model
+  (`showMeasurements`, `magicMeasure`).
+- **Corner block / brace generators** — the parts and costing already exist.

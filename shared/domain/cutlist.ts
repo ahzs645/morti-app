@@ -11,6 +11,12 @@ const roleCodes: Record<string, string> = {
   'drawer-side': 'D',
   'drawer-back': 'D',
   'drawer-bottom': 'D',
+  // Rails and stiles are different parts, so they get different codes — the
+  // drawer roles share 'D' on purpose because they also share a counter.
+  'frame-rail': 'FR',
+  'frame-stile': 'FS',
+  'corner-block': 'CB',
+  'corner-brace': 'CR',
 }
 
 export function panelCutlistOrientation(panel: CompiledPanel): string {

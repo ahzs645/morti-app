@@ -12,18 +12,40 @@ import {
   cutlistFileName,
   serializeCutlist,
 } from '~~/shared/domain/cutlist-export'
-import type { CompiledPanel, PanelOperation, PanelRole } from '~~/shared/domain/types'
-import { readFurnitureDoc } from '~~/shared/yjs/doc'
+import { computeCosting, costingInputsFromGroups } from '~~/shared/domain/costing'
+import { computeBandList, edgeBandSummary } from '~~/shared/domain/edgeband'
+import { GRAIN_DIRECTION_CODE, attributesForRole } from '~~/shared/domain/panel-attributes'
+import { defaultRouterProfile, routerProfileSummary } from '~~/shared/domain/router-profiles'
+import { defaultOutline, outlineSummary } from '~~/shared/domain/outline'
+import { checkTransportFit, computeOccupiedSpace } from '~~/shared/domain/occupied-space'
+import { DEFAULT_PUBLIC_STYLE } from '~~/shared/domain/defaults'
+import type { CompiledPanel, PanelRole, PublicStyle } from '~~/shared/domain/types'
+import {
+  AREA_UNIT_SYMBOL,
+  LENGTH_UNITS,
+  LENGTH_UNIT_SYMBOL,
+  VOLUME_UNIT_SYMBOL,
+  WEIGHT_UNIT_SYMBOL,
+  formatArea,
+  formatLength,
+  formatMoney,
+  formatVolume,
+  formatWeight,
+} from '~~/shared/domain/units'
+import type { LengthUnit } from '~~/shared/domain/units'
+import { readFurnitureDoc, setSettingValue } from '~~/shared/yjs/doc'
 
 interface Props {
   ydoc: Y.Doc
   selectedDrawingKey?: string | null
   projectName?: string
+  publicStyle?: PublicStyle
 }
 
 const props = withDefaults(defineProps<Props>(), {
   selectedDrawingKey: null,
   projectName: 'cutlist',
+  publicStyle: () => DEFAULT_PUBLIC_STYLE,
 })
 
 const emit = defineEmits<{
@@ -65,6 +87,19 @@ interface PanelRow {
   height: number
   thickness: number
   quantity: number
+  material: string
+  /** Whole-group weight, kg. */
+  weightKg: number
+  /** Whole-group material cost, in the project currency. */
+  cost: number
+  /** Grain direction code (`L` / `W` / `—`). */
+  grain: string
+  /** Banded-edge summary, e.g. `T/B/L`. */
+  banding: string
+  /** Router edge profile note. */
+  edgeProfile: string
+  /** Outline note for non-rectangular panels. */
+  shape: string
 }
 
 interface OperationRow {
@@ -82,23 +117,39 @@ interface OperationRow {
 
 const compiled = computed(() => compileAssembly(snapshot.value))
 
-const panelRows = computed<PanelRow[]>(() => {
+const settings = computed(() => snapshot.value.settings)
+
+/** Identical panels collapsed into one row, newest costing attached. */
+const panelGroups = computed(() => {
   const { panels, operations } = compiled.value
   const grouped = new Map<string, { representative: CompiledPanel, quantity: number }>()
   for (const panel of panels) {
     const signature = panelCutlistSignature(panel, operations)
     const existing = grouped.get(signature)
-    if (existing) {
-      existing.quantity += 1
-    }
-    else {
-      grouped.set(signature, { representative: panel, quantity: 1 })
-    }
+    if (existing) existing.quantity += 1
+    else grouped.set(signature, { representative: panel, quantity: 1 })
   }
+  return grouped
+})
 
-  const rows = [...grouped.entries()]
+const costing = computed(() =>
+  computeCosting(
+    costingInputsFromGroups([...panelGroups.value.values()], props.publicStyle),
+    settings.value.costBasis,
+  ),
+)
+
+const panelRows = computed<PanelRow[]>(() => {
+  // `computeCosting` preserves input order, so the nth costing row belongs to
+  // the nth group — index them together before sorting for display.
+  const costingByKey = new Map(
+    [...panelGroups.value.keys()].map((signature, index) => [signature, costing.value.rows[index]]),
+  )
+
+  const rows = [...panelGroups.value.entries()]
     .map(([key, entry]) => {
       const panel = entry.representative
+      const cost = costingByKey.get(key)
       return {
         key,
         role: panel.role,
@@ -107,6 +158,13 @@ const panelRows = computed<PanelRow[]>(() => {
         height: Math.max(0, panel.height),
         thickness: Math.max(0, panel.thickness),
         quantity: entry.quantity,
+        material: cost?.materialLabel ?? '—',
+        weightKg: cost?.totalWeightKg ?? 0,
+        cost: cost?.totalCost ?? 0,
+        grain: GRAIN_DIRECTION_CODE[attributesForRole(snapshot.value.panelAttributes, panel.role).grain],
+        banding: edgeBandSummary(attributesForRole(snapshot.value.panelAttributes, panel.role).bands),
+        edgeProfile: routerProfileSummary(snapshot.value.routerProfiles[panel.role] ?? defaultRouterProfile()),
+        shape: outlineSummary(snapshot.value.outlines[panel.role] ?? defaultOutline()),
       }
     })
     .sort((a, b) =>
@@ -186,10 +244,83 @@ watch([panelRows, () => props.selectedDrawingKey], ([rows]) => {
   }
 })
 
+/** Metres → the project's display unit. Table cells, not exports. */
 function formatMetric(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return '—'
-  return value.toFixed(3).replace(/\.?0+$/, '')
+  const s = settings.value
+  return formatLength(value, s.lengthUnit, { precision: s.lengthPrecision, denominator: s.fractionDenominator })
 }
+
+const lengthSymbol = computed(() => LENGTH_UNIT_SYMBOL[settings.value.lengthUnit])
+const edgeSymbol = computed(() => LENGTH_UNIT_SYMBOL[settings.value.edgeUnit])
+
+function formatRowWeight(kg: number): string {
+  return formatWeight(kg, settings.value.weightUnit)
+}
+
+function formatRowCost(amount: number): string {
+  return formatMoney(amount, settings.value.currency)
+}
+
+/** Quick unit switch — the full set of preferences lives in project settings. */
+const lengthUnitOptions = LENGTH_UNITS
+const lengthUnitModel = computed({
+  get: () => settings.value.lengthUnit,
+  set: (unit: LengthUnit) => setSettingValue(props.ydoc, 'lengthUnit', unit),
+})
+
+const bandList = computed(() =>
+  computeBandList(
+    [...panelGroups.value.values()].map(({ representative, quantity }) => ({
+      width: Math.max(0, representative.width),
+      height: Math.max(0, representative.height),
+      thickness: Math.max(0, representative.thickness),
+      quantity,
+      bands: attributesForRole(snapshot.value.panelAttributes, representative.role).bands,
+    })),
+  ),
+)
+
+const occupied = computed(() => computeOccupiedSpace(compiled.value.panels))
+const transportFit = computed(() => checkTransportFit(occupied.value, snapshot.value.transport))
+
+const totals = computed(() => costing.value.totals)
+
+/** Base 7 columns plus whichever of material/weight/cost the project reports. */
+const panelColumnCount = computed(() =>
+  11
+  + (settings.value.reportWeight || settings.value.reportCost ? 1 : 0)
+  + (settings.value.reportWeight ? 1 : 0)
+  + (settings.value.reportCost ? 1 : 0),
+)
+
+function formatBandLength(metres: number): string {
+  const s = settings.value
+  return formatLength(metres, s.edgeUnit, { precision: s.edgePrecision, denominator: s.fractionDenominator })
+}
+
+const summary = computed(() => {
+  const s = settings.value
+  const t = totals.value
+  const items: { label: string, value: string }[] = [
+    { label: 'Panels', value: String(t.panelCount) },
+    { label: `Face area (${AREA_UNIT_SYMBOL[s.areaUnit]})`, value: formatArea(t.faceAreaM2, s.areaUnit, s.areaPrecision) },
+    { label: `Volume (${VOLUME_UNIT_SYMBOL[s.volumeUnit]})`, value: formatVolume(t.volumeM3, s.volumeUnit) },
+    { label: `Edge length (${LENGTH_UNIT_SYMBOL[s.edgeUnit]})`, value: formatLength(t.edgeLengthM, s.edgeUnit, { precision: s.edgePrecision, denominator: s.fractionDenominator }) },
+  ]
+  if (s.reportWeight) items.push({ label: `Weight (${WEIGHT_UNIT_SYMBOL[s.weightUnit]})`, value: formatWeight(t.weightKg, s.weightUnit) })
+  if (s.reportCost) items.push({ label: 'Material cost', value: formatMoney(t.cost, s.currency) })
+  // showOccupiedSpace: the overall size of the assembled piece.
+  const space = occupied.value
+  const lengthOptions = { precision: s.lengthPrecision, denominator: s.fractionDenominator }
+  items.push({
+    label: `Occupied space (${LENGTH_UNIT_SYMBOL[s.lengthUnit]})`,
+    value: [space.size.x, space.size.y, space.size.z]
+      .map(value => formatLength(value, s.lengthUnit, lengthOptions))
+      .join(' × '),
+  })
+  return items
+})
 
 function exportCutlist(format: CutlistFormat) {
   if (!import.meta.client) return
@@ -197,6 +328,9 @@ function exportCutlist(format: CutlistFormat) {
     {
       projectName: props.projectName,
       exportedAt: new Date().toISOString(),
+      settings: settings.value,
+      totals: totals.value,
+      bandList: bandList.value,
       panels: panelRows.value.map(r => ({
         groupId: r.groupId,
         role: r.role,
@@ -205,6 +339,13 @@ function exportCutlist(format: CutlistFormat) {
         height: r.height,
         thickness: r.thickness,
         quantity: r.quantity,
+        material: r.material,
+        weightKg: r.weightKg,
+        cost: r.cost,
+        grain: r.grain,
+        banding: r.banding,
+        edgeProfile: r.edgeProfile,
+        shape: r.shape,
       })),
       operations: operationRows.value.map(r => ({
         operationType: r.operationType,
@@ -253,7 +394,19 @@ function stop() {}
         <h2 class="text-balance text-sm font-semibold text-highlighted">
           Panel cutlist
         </h2>
-        <div class="flex items-center gap-1.5">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <label class="flex items-center gap-1.5">
+            <span class="text-[11px] text-muted">Units</span>
+            <USelect
+              v-model="lengthUnitModel"
+              :items="lengthUnitOptions"
+              value-key="value"
+              label-key="label"
+              size="xs"
+              class="w-40"
+              aria-label="Cutlist display units"
+            />
+          </label>
           <span class="text-[11px] text-muted">Export</span>
           <button
             v-for="fmt in CUTLIST_FORMATS"
@@ -280,10 +433,32 @@ function stop() {}
             </th>
             <th class="border border-default px-2 py-1.5 font-medium">Role</th>
             <th class="border border-default px-2 py-1.5 font-medium"> Orientation </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Width</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Height </th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Thickness </th>
+            <th class="border border-default px-2 py-1.5 font-medium">Width ({{ lengthSymbol }})</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> Height ({{ lengthSymbol }}) </th>
+            <th class="border border-default px-2 py-1.5 font-medium"> Thickness ({{ lengthSymbol }}) </th>
             <th class="border border-default px-2 py-1.5 font-medium">Qty</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Grain</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Banding</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Edge profile</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Shape</th>
+            <th
+              v-if="settings.reportWeight || settings.reportCost"
+              class="border border-default px-2 py-1.5 font-medium"
+            >
+              Material
+            </th>
+            <th
+              v-if="settings.reportWeight"
+              class="border border-default px-2 py-1.5 font-medium"
+            >
+              Weight
+            </th>
+            <th
+              v-if="settings.reportCost"
+              class="border border-default px-2 py-1.5 font-medium"
+            >
+              Cost
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -320,10 +495,40 @@ function stop() {}
             <td :class="['border px-2 py-1.5 font-semibold tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ row.quantity }}
             </td>
+            <td :class="['border px-2 py-1.5 text-center', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
+              {{ row.grain }}
+            </td>
+            <td :class="['border px-2 py-1.5 text-center', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
+              {{ row.banding }}
+            </td>
+            <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
+              {{ row.edgeProfile }}
+            </td>
+            <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
+              {{ row.shape }}
+            </td>
+            <td
+              v-if="settings.reportWeight || settings.reportCost"
+              :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']"
+            >
+              {{ row.material }}
+            </td>
+            <td
+              v-if="settings.reportWeight"
+              :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']"
+            >
+              {{ formatRowWeight(row.weightKg) }}
+            </td>
+            <td
+              v-if="settings.reportCost"
+              :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']"
+            >
+              {{ formatRowCost(row.cost) }}
+            </td>
           </tr>
           <tr v-if="panelRows.length === 0">
             <td
-              colspan="7"
+              :colspan="panelColumnCount"
               class="border border-default px-2 py-4 text-center text-muted"
             >
               No panels yet
@@ -331,6 +536,85 @@ function stop() {}
           </tr>
         </tbody>
       </table>
+      </div>
+
+      <p
+        v-if="panelRows.length > 0 && !transportFit.unchecked && !transportFit.fitsAssembled"
+        class="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning"
+      >
+        Assembled, this piece exceeds the {{ transportFit.exceeded.join(' and ') }} you set for transport.
+        It will need to travel knocked down.
+      </p>
+
+      <dl
+        v-if="panelRows.length > 0"
+        class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-muted/40 p-3 sm:grid-cols-3 lg:grid-cols-6"
+      >
+        <div
+          v-for="item in summary"
+          :key="item.label"
+          class="min-w-0"
+        >
+          <dt class="truncate text-[11px] text-muted">
+            {{ item.label }}
+          </dt>
+          <dd class="truncate text-sm font-semibold tabular-nums text-highlighted">
+            {{ item.value }}
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+    <section v-if="bandList.rows.length > 0">
+      <h2 class="mb-2 text-balance text-sm font-semibold text-highlighted">
+        Edge banding
+      </h2>
+      <div class="-mx-1 max-w-full overflow-x-auto px-1">
+        <table class="w-full min-w-[32rem] border-collapse text-xs">
+          <thead>
+            <tr class="bg-muted/60 text-left text-muted">
+              <th class="border border-default px-2 py-1.5 font-medium">Edge band</th>
+              <th class="border border-default px-2 py-1.5 font-medium">Edges</th>
+              <th class="border border-default px-2 py-1.5 font-medium">Length ({{ edgeSymbol }})</th>
+              <th class="border border-default px-2 py-1.5 font-medium">Cost</th>
+              <th class="border border-default px-2 py-1.5 font-medium">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in bandList.rows"
+              :key="row.band.id"
+              class="odd:bg-default even:bg-muted/20"
+            >
+              <td class="border border-default px-2 py-1.5 text-highlighted">
+                <span class="inline-flex items-center gap-1.5">
+                  <span
+                    class="inline-block size-2.5 shrink-0 rounded-full ring-1 ring-inset ring-default"
+                    :style="{ backgroundColor: row.band.colorHex }"
+                  />
+                  {{ row.band.label }}
+                </span>
+              </td>
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ row.edgeCount }}</td>
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatBandLength(row.lengthM) }}</td>
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatRowCost(row.cost) }}</td>
+              <td class="border border-default px-2 py-1.5 text-muted">
+                <span
+                  v-if="row.tooNarrow"
+                  class="text-warning"
+                >Tape narrower than panel</span>
+                <span v-else>—</span>
+              </td>
+            </tr>
+            <tr class="bg-muted/40 font-semibold">
+              <td class="border border-default px-2 py-1.5 text-highlighted">Total</td>
+              <td class="border border-default px-2 py-1.5" />
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatBandLength(bandList.totalLengthM) }}</td>
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatRowCost(bandList.totalCost) }}</td>
+              <td class="border border-default px-2 py-1.5" />
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -345,10 +629,10 @@ function stop() {}
             <th class="border border-default px-2 py-1.5 font-medium"> Operation </th>
             <th class="border border-default px-2 py-1.5 font-medium"> Target panel </th>
             <th class="border border-default px-2 py-1.5 font-medium">Face</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Diameter </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Depth</th>
-            <th class="border border-default px-2 py-1.5 font-medium">Width</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Length </th>
+            <th class="border border-default px-2 py-1.5 font-medium"> Diameter ({{ lengthSymbol }}) </th>
+            <th class="border border-default px-2 py-1.5 font-medium">Depth ({{ lengthSymbol }})</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Width ({{ lengthSymbol }})</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> Length ({{ lengthSymbol }}) </th>
             <th class="border border-default px-2 py-1.5 font-medium"> Through </th>
             <th class="border border-default px-2 py-1.5 font-medium">Qty</th>
           </tr>

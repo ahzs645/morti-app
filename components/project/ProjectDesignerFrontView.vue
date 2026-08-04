@@ -1,14 +1,25 @@
 <script setup lang="ts">
 import type { FurnitureColumn, FurnitureConfig, FurnitureModule } from '~~/shared/domain/types'
+import type { FreePanel } from '~~/shared/domain/free-panels'
+import { type OutlineMap, outlineProfile } from '~~/shared/domain/outline'
+import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
+import { frameMemberOffsets } from '~~/shared/domain/frame'
 
 interface Props {
   columns: FurnitureColumn[]
   config: FurnitureConfig
   selectedModuleIds: string[]
   zoomPercent: number
+  /** Drawn as an elevation overlay so the flat view matches the 3D. */
+  freePanels?: FreePanel[]
+  /** Front-facing outlines are clipped onto door fronts. */
+  outlines?: OutlineMap
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  freePanels: () => [],
+  outlines: undefined,
+})
 
 const emit = defineEmits<{
   (e: 'add-column-left'): void
@@ -30,7 +41,7 @@ const Kl = 28 // column meta footer offset
 const Bt = 10 // gap above the top-of-column "+" button
 const qt = 4 // column outer padding
 const Ke = 4 // column-resize divider lateral margin
-const We = 4 // column-resize divider width / module-boundary spacer height
+const We = 4 // column-resize divider width
 const zt = 6 // module-boundary drag-handle height
 const ALLOWED_ZOOMS = [100, 75, 50, 25] as const
 const OUTER_RAIL_GAP = 12 // gap-3 between side add buttons and the rail
@@ -89,15 +100,42 @@ function isSelected(moduleId: string): boolean {
   return selectedSet.value.has(moduleId)
 }
 
+/**
+ * Module types with no front panel. They are open bays you can see into, so
+ * they render as an outline with their internal boards drawn on top — the same
+ * treatment `shelf` always had. Filling them solid makes shelves and dividers
+ * read as drawer and door fronts, which is the wrong part entirely.
+ */
+function isOpenBay(mod: FurnitureModule): boolean {
+  return mod.type === 'shelf' || mod.type === 'shelves' || mod.type === 'dividers' || mod.type === 'frame'
+}
+
+function frontClass(mod: FurnitureModule): string {
+  if (!anySelected.value || isSelected(mod.id)) return 'bg-primary'
+  return 'bg-inverted opacity-10 ring ring-default/60 hover:opacity-10'
+}
+
 function moduleClass(mod: FurnitureModule): string {
   const moduleIsSelected = isSelected(mod.id)
-  if (mod.type === 'shelf') {
+  if (isOpenBay(mod)) {
     if (anySelected.value && !moduleIsSelected) return 'module-shelf module-shelf-dim'
     if (moduleIsSelected) return 'module-shelf module-shelf-selected'
     return 'module-shelf'
   }
-  if (!anySelected.value || moduleIsSelected) return 'bg-primary'
-  return 'bg-inverted opacity-10 ring ring-default/60 hover:opacity-10'
+  // A double-door module is two panels, and the compiler shapes each one; the
+  // module rectangle is not a front, so it carries no fill of its own.
+  if (mod.type === 'doors') return ''
+  return frontClass(mod)
+}
+
+/** Fill for a board drawn inside an open bay — a real panel, so it is solid. */
+function boardClass(mod: FurnitureModule): string {
+  return !anySelected.value || isSelected(mod.id) ? 'bg-primary' : 'bg-inverted opacity-25'
+}
+
+/** A board's drawn thickness in px, never thinner than a hairline. */
+function boardThicknessPx(): string {
+  return `${Math.max(2, Math.round(props.config.panelThickness * pxPerMeter.value))}px`
 }
 
 function meterToPx(m: number): number {
@@ -171,13 +209,20 @@ function doorsPullStyle(side: 'left' | 'right'): Record<string, string> {
   }
 }
 
-function doorDividerStyle(): Record<string, string> {
+/**
+ * One leaf of a double-door module. They are drawn as two elements rather than
+ * one fill with a line down it so that a shaped outline clips each leaf, the
+ * way the compiler shapes each of the two door panels — a single arch spanning
+ * the pair is a different piece of furniture.
+ */
+function doorLeafStyle(side: 'left' | 'right'): Record<string, string> {
+  const halfGap = 1
   return {
-    width: '2px',
-    left: '50%',
     top: '0',
     bottom: '0',
-    transform: 'translateX(-50%)',
+    [side]: '0',
+    width: `calc(50% - ${halfGap}px)`,
+    ...(doorClipPath.value ? { clipPath: doorClipPath.value } : {}),
   }
 }
 
@@ -213,6 +258,100 @@ function shelfCount(mod: FurnitureModule): number {
 
 function dividerCount(mod: FurnitureModule): number {
   return Math.max(1, Math.min(16, Math.round((mod.dividerCount as number) || 1)))
+}
+
+// --- Front-panel outlines -------------------------------------------------
+//
+// An outline lives in its panel's own width x height plane. Only the roles the
+// compiler emits as `vertical-xy` — door and drawer fronts — have that plane
+// facing the viewer, so only those can show in a front elevation. A shaped
+// side panel is arched across its *depth*, which this view genuinely cannot
+// represent, and shouldn't pretend to.
+
+/** CSS `polygon()` for an outline, or null when the front is rectangular. */
+function frontClipPath(role: 'door-front'): string | null {
+  const profile = outlineProfile(props.outlines?.[role])
+  if (!profile || profile.length < 3) return null
+  // Normalized (-0.5..0.5, +y up) to CSS percentages (+y down).
+  const points = profile
+    .map(p => `${((p.x + 0.5) * 100).toFixed(3)}% ${((0.5 - p.y) * 100).toFixed(3)}%`)
+    .join(', ')
+  return `polygon(${points})`
+}
+
+const doorClipPath = computed(() => frontClipPath('door-front'))
+
+/**
+ * True only for single-door modules, where the module rectangle *is* the front
+ * panel, so clipping it is exact. A double-door module clips its two leaves
+ * individually instead — see `doorLeafStyle`.
+ *
+ * Open shelves, dividers, and frames have no front at all. Drawers do, but a
+ * drawer module holds N stacked fronts and the bands here are drawn as
+ * separators over a single fill — clipping the module would cut only the top
+ * drawer and leave the rest square, which reads as a design rather than a
+ * limitation. Until the bands are real elements, drawer-front outlines are
+ * left out of this view; see docs/woodworking-port.md.
+ */
+function hasFrontOutline(mod: FurnitureModule): boolean {
+  return (mod.type === 'left-door' || mod.type === 'right-door') && doorClipPath.value !== null
+}
+
+/** Applied to a module whose front carries a shaped outline. */
+function frontClipStyle(mod: FurnitureModule): Record<string, string> {
+  return hasFrontOutline(mod) && doorClipPath.value ? { clipPath: doorClipPath.value } : {}
+}
+
+// --- Face frame (mirrors `compileFrame` in shared/domain/assembly.ts) ---
+
+function frameRailCount(mod: FurnitureModule): number {
+  return Math.max(0, Math.min(8, Math.round((mod.frameRailCount as number) || 0)))
+}
+
+function frameStileCount(mod: FurnitureModule): number {
+  return Math.max(0, Math.min(8, Math.round((mod.frameStileCount as number) || 0)))
+}
+
+/** Member size in metres, clamped the same way the compiler clamps it. */
+function frameMemberMeters(columnWidth: number, mod: FurnitureModule): number {
+  return Math.min(FRAME_MEMBER_WIDTH, Math.max(0.001, Math.min(columnWidth, mod.height) / 3))
+}
+
+/** Member width in px, clamped the same way the compiler clamps it. */
+function frameMemberPx(columnWidth: number, mod: FurnitureModule): number {
+  return Math.max(1, Math.round(frameMemberMeters(columnWidth, mod) * pxPerMeter.value))
+}
+
+/**
+ * The module button carries the column's padding, so its width is not the
+ * column width. Positions are therefore expressed as a fraction of the
+ * button's own box — which is exactly what a CSS percentage resolves against —
+ * rather than converted through a pixel width the button does not have.
+ */
+function frameOffsetFractions(span: number, member: number, interior: number): number[] {
+  return frameMemberOffsets(1, span > 0 ? member / span : 0, interior)
+}
+
+/** Outer stiles hug the sides; interior ones leave equal openings between them. */
+function frameStileStyle(columnWidth: number, mod: FurnitureModule, index: number): Record<string, string> {
+  const member = frameMemberPx(columnWidth, mod)
+  if (index === 0) return { left: '0px', width: `${member}px` }
+  if (index === 1) return { right: '0px', width: `${member}px` }
+  const buttonWidth = Math.max(0.001, columnWidth - (2 * qt) / pxPerMeter.value)
+  const fractions = frameOffsetFractions(buttonWidth, frameMemberMeters(columnWidth, mod), frameStileCount(mod))
+  const fraction = fractions[index - 1] ?? 0.5
+  return { left: `calc(${fraction * 100}% - ${member / 2}px)`, width: `${member}px` }
+}
+
+/** Rails span between the outer stiles, so the frame reads as a joined grid. */
+function frameRailStyle(columnWidth: number, mod: FurnitureModule, index: number): Record<string, string> {
+  const member = frameMemberPx(columnWidth, mod)
+  const inset = { left: `${member}px`, right: `${member}px` }
+  if (index === 0) return { ...inset, bottom: '0px', height: `${member}px` }
+  if (index === 1) return { ...inset, top: '0px', height: `${member}px` }
+  const fractions = frameOffsetFractions(mod.height, frameMemberMeters(columnWidth, mod), frameRailCount(mod))
+  const fraction = fractions[index - 1] ?? 0.5
+  return { ...inset, bottom: `calc(${fraction * 100}% - ${member / 2}px)`, height: `${member}px` }
 }
 
 function spacerStyle(axis: 'width' | 'height'): Record<string, string> {
@@ -330,13 +469,54 @@ function columnTotalHeight(col: FurnitureColumn): number {
   return col.modules.reduce((sum, mod) => sum + mod.height, 0)
 }
 
+/**
+ * The module stack is exactly as tall as the modules in it. Decks and boundary
+ * handles are drawn over the boundaries rather than laid out between them:
+ * when they took layout space, a column split into two modules came out taller
+ * than a column holding one module of the same height, and the drawing said
+ * the two pieces were different sizes when the 3D said they were not.
+ */
+function columnStackHeight(col: FurnitureColumn): number {
+  if (col.modules.length === 0) return 0
+  return col.modules.reduce((sum, mod) => sum + meterToPx(mod.height), 0)
+}
+
 function columnRenderedHeight(col: FurnitureColumn): number {
-  const moduleCount = col.modules.length
-  const moduleHeight = meterToPx(columnTotalHeight(col))
-  const spacerHeight = moduleCount > 0 ? We + moduleCount * zt : 0
-  const gapHeight = moduleCount > 0 ? moduleCount * 2 * Ke : 0
-  const height = moduleHeight + spacerHeight + gapHeight
+  const height = columnStackHeight(col)
   return height > 0 ? height + qt * 2 : 0
+}
+
+/**
+ * Pixels from the stack's bottom edge to boundary `index` — 0 is the floor,
+ * and boundary k is the top of module k−1. The compiler puts a deck on every
+ * one of them.
+ */
+function boundaryOffsetPx(col: FurnitureColumn, index: number): number {
+  let offset = 0
+  for (let i = 0; i < index; i++) offset += meterToPx(col.modules[i]?.height ?? 0)
+  return offset
+}
+
+function boundaryHandleStyle(col: FurnitureColumn, index: number): Record<string, string> {
+  return { bottom: `${boundaryOffsetPx(col, index) - zt / 2}px`, height: `${zt}px` }
+}
+
+/** A carcass deck's drawn thickness in px, never thinner than a hairline. */
+function deckThicknessPx(): number {
+  return Math.max(2, Math.round(props.config.panelThickness * pxPerMeter.value))
+}
+
+/**
+ * A deck straddles its boundary the way the compiler places it, and carries a
+ * hairline of background either side. That seam is what makes it read as a
+ * separate board: a drawer front and the deck above it are both drawn in the
+ * primary fill, so without it the two run together into one slab.
+ */
+const DECK_SEAM_PX = 1
+
+function deckBandStyle(col: FurnitureColumn, index: number): Record<string, string> {
+  const band = deckThicknessPx() + 2 * DECK_SEAM_PX
+  return { bottom: `${boundaryOffsetPx(col, index) - band / 2}px`, height: `${band}px` }
 }
 
 function boundaryHeight(boundaryIndex: number): number {
@@ -353,6 +533,50 @@ const railBodyHeightPx = computed<string>(() => `${railBodyHeight.value}px`)
 
 function boundaryHeightPx(boundaryIndex: number): string {
   return `${boundaryHeight(boundaryIndex)}px`
+}
+
+// --- Free panels as an elevation overlay ----------------------------------
+//
+// The rail interleaves a resize divider with every column, so world X cannot
+// be scaled straight to pixels. Walking the same accumulation the flex layout
+// produces keeps the overlay locked to the columns at any zoom.
+
+/**
+ * Where world Y = 0 lands, in pixels above the rail body's bottom edge: the
+ * stack is bottom-aligned inside the column's padding, and its bottom edge is
+ * the floor the compiler measures from.
+ */
+const FLOOR_OFFSET_PX = qt
+
+/** Pixels from the rail body's left edge for a world X, in metres (0 = centre). */
+function pxForWorldX(x: number): number {
+  const half = totalColumnWidthMeters.value / 2
+  let cursorMeters = -half
+  let cursorPx = We + Ke
+  for (const col of props.columns) {
+    const next = cursorMeters + Math.max(0, col.width)
+    if (x <= next) return cursorPx + (x - cursorMeters) * pxPerMeter.value
+    cursorMeters = next
+    cursorPx += Math.round(Math.max(0, col.width) * pxPerMeter.value) + We + Ke
+  }
+  // Past the last column — keep extending at scale so the panel still lands.
+  return cursorPx + (x - cursorMeters) * pxPerMeter.value
+}
+
+/**
+ * A front elevation shows each panel's X and Y extent, whichever axis carries
+ * its thickness — so a side panel correctly reads as a narrow vertical strip.
+ */
+function freePanelStyle(panel: FreePanel): Record<string, string> {
+  const left = pxForWorldX(panel.position.x - panel.size.x / 2)
+  const right = pxForWorldX(panel.position.x + panel.size.x / 2)
+  const bottom = FLOOR_OFFSET_PX + (panel.position.y - panel.size.y / 2) * pxPerMeter.value
+  return {
+    left: `${Math.round(left)}px`,
+    width: `${Math.max(1, Math.round(right - left))}px`,
+    bottom: `${Math.round(bottom)}px`,
+    height: `${Math.max(3, Math.round(panel.size.y * pxPerMeter.value))}px`,
+  }
 }
 
 function addButtonMarginTop(boundaryIndex: number): string {
@@ -389,9 +613,19 @@ function addButtonMarginTop(boundaryIndex: number): string {
 
           <div class="shrink-0 rounded-lg">
             <div
-              class="flex w-max items-end"
+              class="relative flex w-max items-end"
               :style="{ height: railBodyHeightPx }"
             >
+              <!-- Free panels sit outside the column grid, so they are drawn
+                   as an elevation overlay rather than as modules. They are real
+                   boards in the 3D, so they read as solid boards here too. -->
+              <div
+                v-for="panel in freePanels"
+                :key="`free-${panel.id}`"
+                class="pointer-events-none absolute z-0 rounded-[2px] bg-primary shadow-sm"
+                :style="freePanelStyle(panel)"
+                :aria-label="`Free panel ${panel.label}`"
+              />
               <div
                 v-if="columns.length > 0"
                 class="column-resize-hit shrink-0 cursor-col-resize touch-none transition-opacity hover:opacity-75"
@@ -429,18 +663,9 @@ function addButtonMarginTop(boundaryIndex: number): string {
                     </button>
 
                     <div
-                      class="flex flex-col-reverse items-stretch"
-                      :style="{ gap: `${Ke}px` }"
+                      class="relative flex flex-col-reverse items-stretch"
                       :aria-label="`Column ${ci + 1}, width ${formatMeasurement(col.width)} meters`"
                     >
-                      <span
-                        v-if="col.modules.length > 0"
-                        class="block w-full shrink-0"
-                        :class="selectedFillClass"
-                        :style="spacerStyle('height')"
-                        aria-hidden="true"
-                      />
-
                       <template
                         v-for="(mod, mi) in col.modules"
                         :key="mod.id"
@@ -449,7 +674,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                           type="button"
                           class="relative block w-full shrink-0 text-left outline-none transition-[opacity,transform,background-color] duration-150 hover:opacity-90 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-default"
                           :class="moduleClass(mod)"
-                          :style="{ height: px(mod.height) }"
+                          :style="{ height: px(mod.height), ...frontClipStyle(mod) }"
                           :aria-label="`${mod.type} module, height ${formatMeasurement(mod.height)} meters`"
                           @click.stop="onModuleClick($event, mod.id)"
                         >
@@ -494,9 +719,12 @@ function addButtonMarginTop(boundaryIndex: number): string {
 
                           <template v-else-if="mod.type === 'doors'">
                             <div
+                              v-for="side in (['left', 'right'] as const)"
+                              :key="`${mod.id}-leaf-${side}`"
                               class="absolute"
-                              :class="visualBgClass()"
-                              :style="doorDividerStyle()"
+                              :class="frontClass(mod)"
+                              :style="doorLeafStyle(side)"
+                              aria-hidden="true"
                             />
                             <div
                               class="absolute rounded-full"
@@ -514,8 +742,33 @@ function addButtonMarginTop(boundaryIndex: number): string {
                             <div
                               v-for="i in shelfCount(mod)"
                               :key="`${mod.id}-shelf-${i}`"
-                              class="absolute left-0 right-0 bg-[var(--ui-bg-muted)]"
-                              :style="{ height: '2px', bottom: `${(i / (shelfCount(mod) + 1)) * 100}%` }"
+                              class="absolute left-0 right-0"
+                              :class="boardClass(mod)"
+                              :style="{
+                                height: boardThicknessPx(),
+                                bottom: `calc(${(i / (shelfCount(mod) + 1)) * 100}% - ${boardThicknessPx()} / 2)`,
+                              }"
+                              aria-hidden="true"
+                            />
+                          </template>
+
+                          <template v-else-if="mod.type === 'frame'">
+                            <!-- Two outer stiles and two outer rails always,
+                                 plus the interior members, matching the 3D. -->
+                            <div
+                              v-for="i in frameStileCount(mod) + 2"
+                              :key="`${mod.id}-stile-${i}`"
+                              class="absolute top-0 bottom-0"
+                              :class="boardClass(mod)"
+                              :style="frameStileStyle(col.width, mod, i - 1)"
+                              aria-hidden="true"
+                            />
+                            <div
+                              v-for="i in frameRailCount(mod) + 2"
+                              :key="`${mod.id}-rail-${i}`"
+                              class="absolute"
+                              :class="boardClass(mod)"
+                              :style="frameRailStyle(col.width, mod, i - 1)"
                               aria-hidden="true"
                             />
                           </template>
@@ -524,27 +777,52 @@ function addButtonMarginTop(boundaryIndex: number): string {
                             <div
                               v-for="i in dividerCount(mod)"
                               :key="`${mod.id}-divider-${i}`"
-                              class="absolute top-0 bottom-0 bg-[var(--ui-bg-muted)]"
-                              :style="{ width: '2px', left: `${(i / (dividerCount(mod) + 1)) * 100}%` }"
+                              class="absolute top-0 bottom-0"
+                              :class="boardClass(mod)"
+                              :style="{
+                                width: boardThicknessPx(),
+                                left: `calc(${(i / (dividerCount(mod) + 1)) * 100}% - ${boardThicknessPx()} / 2)`,
+                              }"
                               aria-hidden="true"
                             />
                           </template>
                         </button>
+                      </template>
 
+                      <!-- Decks and handles are drawn over the boundaries, not
+                           laid out between them, so the stack stays exactly as
+                           tall as its modules. One deck at the floor, one on
+                           top of every module — the same boundaries the
+                           compiler puts a `horizontal-deck` panel on. -->
+                      <div
+                        v-for="bi in col.modules.length + 1"
+                        :key="`deck-${bi - 1}`"
+                        class="pointer-events-none absolute inset-x-0 z-10 bg-default"
+                        :style="deckBandStyle(col, bi - 1)"
+                        aria-hidden="true"
+                      >
+                        <span
+                          class="absolute inset-x-0 top-1/2 block -translate-y-1/2"
+                          :class="selectedFillClass"
+                          :style="{ height: `${deckThicknessPx()}px` }"
+                        />
+                      </div>
+
+                      <!-- The positioning lives on this wrapper because
+                           `.boundary-resize-hit` sets `position: relative`. -->
+                      <div
+                        v-for="(mod, mi) in col.modules"
+                        :key="`${mod.id}-boundary`"
+                        class="absolute inset-x-0 z-20"
+                        :style="boundaryHandleStyle(col, mi + 1)"
+                      >
                         <button
                           type="button"
-                          class="boundary-resize-hit relative block w-full shrink-0 cursor-row-resize"
-                          :style="{ height: `${zt}px` }"
+                          class="boundary-resize-hit block size-full cursor-row-resize"
                           :aria-label="`Resize module boundary ${mi + 1} in column ${ci + 1}`"
                           @pointerdown="onBoundaryPointerDown(ci, mi + 1, $event)"
-                        >
-                          <span
-                            class="absolute inset-x-0 top-1/2 -translate-y-1/2"
-                            :class="selectedFillClass"
-                            :style="spacerStyle('height')"
-                          />
-                        </button>
-                      </template>
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

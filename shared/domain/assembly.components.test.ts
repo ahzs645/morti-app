@@ -11,7 +11,13 @@ vi.mock('three-bvh-csg', () => ({
 
 import { compileAssembly } from './assembly'
 import { panelRoleCode } from './cutlist'
-import { DEFAULT_DIVIDER_COUNT, DEFAULT_FURNITURE_CONFIG, DEFAULT_SHELF_COUNT, defaultModule } from './defaults'
+import { DEFAULT_DIVIDER_COUNT, DEFAULT_FURNITURE_CONFIG, DEFAULT_PROJECT_SETTINGS, DEFAULT_SHELF_COUNT, defaultModule } from './defaults'
+import { defaultDrillingMap } from './drilling'
+import { DEFAULT_JOINERY_SETTINGS } from './joinery'
+import { defaultRouterProfileMap } from './router-profiles'
+import { defaultOutlineMap } from './outline'
+import { DEFAULT_TRANSPORT_LIMITS } from './occupied-space'
+import { ALL_PANEL_ROLES, defaultPanelAttributeMap } from './panel-attributes'
 import type { FurnitureDoc, ModuleType } from './types'
 import { DESIGN_SCHEMA_VERSION } from './types'
 
@@ -20,6 +26,15 @@ function docWithSingleModule(type: ModuleType, extra: Record<string, unknown> = 
     schemaVersion: DESIGN_SCHEMA_VERSION,
     lastAppliedMigrationId: null,
     config: { ...DEFAULT_FURNITURE_CONFIG },
+    settings: { ...DEFAULT_PROJECT_SETTINGS },
+    panelAttributes: defaultPanelAttributeMap(),
+    drilling: defaultDrillingMap(),
+    joinery: { ...DEFAULT_JOINERY_SETTINGS },
+    routerProfiles: defaultRouterProfileMap(),
+    freePanels: [],
+    outlines: defaultOutlineMap(),
+    variables: [],
+    transport: { ...DEFAULT_TRANSPORT_LIMITS },
     columns: [
       { width: 0.5, modules: [{ id: 'm1', type, height: 1.2, ...extra }] },
     ],
@@ -113,5 +128,52 @@ describe('dividers component compiler', () => {
   it('seeds dividerCount in defaultModule for dividers only', () => {
     expect(defaultModule('dividers').dividerCount).toBe(DEFAULT_DIVIDER_COUNT)
     expect(defaultModule('shelf').dividerCount).toBeUndefined()
+  })
+})
+
+describe('frame component compiler', () => {
+  const frameOf = (doc: FurnitureDoc) =>
+    compileAssembly(doc).panels.filter(p => p.role === 'frame-rail' || p.role === 'frame-stile')
+
+  it('emits the four outer members for a plain surround', () => {
+    const panels = frameOf(docWithSingleModule('frame'))
+    expect(panels.filter(p => p.role === 'frame-stile')).toHaveLength(2)
+    expect(panels.filter(p => p.role === 'frame-rail')).toHaveLength(2)
+  })
+
+  it('adds one member per extra rail and stile', () => {
+    const panels = frameOf(docWithSingleModule('frame', { frameRailCount: 3, frameStileCount: 2 }))
+    expect(panels.filter(p => p.role === 'frame-rail')).toHaveLength(2 + 3)
+    expect(panels.filter(p => p.role === 'frame-stile')).toHaveLength(2 + 2)
+  })
+
+  it('keeps every member inside the module opening', () => {
+    const doc = docWithSingleModule('frame', { frameRailCount: 2, frameStileCount: 2 })
+    for (const panel of frameOf(doc)) {
+      expect(panel.width).toBeGreaterThan(0)
+      expect(panel.height).toBeGreaterThan(0)
+      expect(panel.thickness).toBeCloseTo(doc.config.panelThickness, 6)
+    }
+  })
+
+  it('gives each member a unique key', () => {
+    const panels = frameOf(docWithSingleModule('frame', { frameRailCount: 3, frameStileCount: 3 }))
+    expect(new Set(panels.map(p => p.key)).size).toBe(panels.length)
+  })
+
+  it('gives rails and stiles distinct cutlist codes', () => {
+    // They are different parts; sharing a code collided both on F1.
+    expect(panelRoleCode('frame-rail')).toBe('FR')
+    expect(panelRoleCode('frame-stile')).toBe('FS')
+    expect(panelRoleCode('frame-rail')).not.toBe(panelRoleCode('frame-stile'))
+  })
+
+  it('gives every panel role a unique group prefix', () => {
+    // Drawer parts deliberately share 'D' and a counter; nothing else may
+    // collide, or two different parts would carry the same label.
+    const codes = ALL_PANEL_ROLES
+      .filter(role => !role.startsWith('drawer-'))
+      .map(role => panelRoleCode(role))
+    expect(new Set(codes).size).toBe(codes.length)
   })
 })

@@ -15,15 +15,85 @@ import {
   DEFAULT_DIVIDER_COUNT,
   DIVIDER_COUNT_MAX,
   DIVIDER_COUNT_MIN,
+  DEFAULT_FRAME_RAIL_COUNT,
+  DEFAULT_FRAME_STILE_COUNT,
+  FRAME_MEMBER_COUNT_MAX,
+  FRAME_MEMBER_COUNT_MIN,
   FURNITURE_CONFIG_WRITABLE_KEYS,
+  DEFAULT_PROJECT_SETTINGS,
+  sanitizeProjectSettings,
 } from '~~/shared/domain/defaults'
 import {
+  ALL_PANEL_ROLES,
+  type PanelAttributeMap,
+  type PanelAttributes,
+  defaultPanelAttributeMap,
+  sanitizePanelAttributeMap,
+  sanitizePanelAttributes,
+} from '~~/shared/domain/panel-attributes'
+import { PANEL_EDGES } from '~~/shared/domain/edgeband'
+import {
+  type DrillingMap,
+  type DrillingRule,
+  defaultDrillingMap,
+  defaultDrillingRule,
+  sanitizeDrillingMap,
+} from '~~/shared/domain/drilling'
+import {
+  DEFAULT_JOINERY_SETTINGS,
+  JOINT_STYLES,
+  type JoinerySettings,
+} from '~~/shared/domain/joinery'
+import {
+  type RouterProfile,
+  type RouterProfileMap,
+  defaultRouterProfileMap,
+  sanitizeRouterProfileMap,
+  sanitizeRouterProfile,
+} from '~~/shared/domain/router-profiles'
+import {
+  type FreePanel,
+  type PanelPlane,
+  type Vec3,
+  type WorldAxis,
+  MAX_FREE_PANELS,
+  centeredOn,
+  copiedToPlane,
+  equallySpaced,
+  makeFreePanel,
+  movedBy,
+  movedByThickness,
+  panelBetween,
+  panelFromFace,
+  resizedOnAxis,
+  sanitizeFreePanels,
+} from '~~/shared/domain/free-panels'
+import {
+  type OutlineMap,
+  type PanelOutline,
+  defaultOutlineMap,
+  sanitizeOutline,
+  sanitizeOutlineMap,
+} from '~~/shared/domain/outline'
+import {
+  type ProjectVariable,
+  MAX_VARIABLES,
+  defaultVariable,
+  sanitizeVariables,
+} from '~~/shared/domain/variables'
+import {
+  type TransportLimits,
+  DEFAULT_TRANSPORT_LIMITS,
+} from '~~/shared/domain/occupied-space'
+import {
   DESIGN_SCHEMA_VERSION,
+  PROJECT_SETTINGS_KEYS,
   type FurnitureColumn,
   type FurnitureConfig,
   type FurnitureDoc,
   type FurnitureModule,
   type ModuleType,
+  type ProjectSettings,
 } from '~~/shared/domain/types'
 
 // Migrations table — each entry mutates the doc in place. Run once, in id order.
@@ -46,6 +116,23 @@ export const MIGRATIONS: { id: string, run(map: Y.Map<unknown>): void }[] = [
       cfg.delete('drawerInnerInset')
     },
   },
+  {
+    // Schema 3 → 4 introduced the free-panel layer. Nothing to rewrite: an
+    // absent `freePanels` array reads as empty, so every pre-4 document keeps
+    // compiling to exactly the panels it did before.
+    id: '1740000002000_free_panel_layer',
+    run(map) {
+      if (!map.has('freePanels')) map.set('freePanels', new Y.Array<unknown>())
+    if (!map.has('variables')) map.set('variables', new Y.Array<unknown>())
+    // Transport limits default to 0 = unchecked, so nothing is flagged until
+    // the user actually states a door width or a van length.
+    if (!map.has('transport')) {
+      const transport = new Y.Map<unknown>()
+      for (const key of TRANSPORT_KEYS) transport.set(key, DEFAULT_TRANSPORT_LIMITS[key])
+      map.set('transport', transport)
+    }
+    },
+  },
 ]
 
 const ROOT_KEY = 'furniture'
@@ -60,6 +147,196 @@ function sanitizeConfigValue<K extends keyof FurnitureConfig>(key: K, value: unk
   return (typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? snapMetric(value)
     : DEFAULT_FURNITURE_CONFIG[key]) as FurnitureConfig[K]
+}
+
+/** Read the `panelAttributes` branch as a POJO, filling any gap with defaults. */
+function readPanelAttributesMap(map: Y.Map<unknown>): PanelAttributeMap {
+  const attributes = map.get('panelAttributes') as Y.Map<unknown> | undefined
+  if (!attributes) return defaultPanelAttributeMap()
+  const raw: Record<string, unknown> = {}
+  for (const role of ALL_PANEL_ROLES) {
+    const entry = attributes.get(role) as Y.Map<unknown> | undefined
+    if (!entry) continue
+    const bands = entry.get('bands') as Y.Map<unknown> | undefined
+    raw[role] = {
+      grain: entry.get('grain'),
+      bands: bands
+        ? Object.fromEntries(PANEL_EDGES.map(edge => [edge, bands.get(edge)]))
+        : undefined,
+    }
+  }
+  return sanitizePanelAttributeMap(raw)
+}
+
+function writePanelAttributes(target: Y.Map<unknown>, role: string, value: PanelAttributes) {
+  let entry = target.get(role) as Y.Map<unknown> | undefined
+  if (!entry) {
+    entry = new Y.Map<unknown>()
+    target.set(role, entry)
+  }
+  entry.set('grain', value.grain)
+  let bands = entry.get('bands') as Y.Map<unknown> | undefined
+  if (!bands) {
+    bands = new Y.Map<unknown>()
+    entry.set('bands', bands)
+  }
+  for (const edge of PANEL_EDGES) bands.set(edge, value.bands[edge])
+}
+
+/**
+ * Read the `drilling` branch as a POJO. Rules are stored as plain JSON inside
+ * a Y.Array per role: they are edited as a whole (add / remove / retune), never
+ * field-by-field by two people at once, so per-field CRDT merge buys nothing.
+ */
+function readDrillingMap(map: Y.Map<unknown>): DrillingMap {
+  const drilling = map.get('drilling') as Y.Map<unknown> | undefined
+  if (!drilling) return defaultDrillingMap()
+  const raw: Record<string, unknown> = {}
+  for (const role of ALL_PANEL_ROLES) {
+    const rules = drilling.get(role) as Y.Array<unknown> | undefined
+    if (rules) raw[role] = rules.toArray()
+  }
+  return sanitizeDrillingMap(raw)
+}
+
+function writeDrillingRules(target: Y.Map<unknown>, role: string, rules: DrillingRule[]) {
+  let array = target.get(role) as Y.Array<unknown> | undefined
+  if (!array) {
+    array = new Y.Array<unknown>()
+    target.set(role, array)
+  }
+  if (array.length > 0) array.delete(0, array.length)
+  if (rules.length > 0) array.insert(0, rules.map(rule => JSON.parse(JSON.stringify(rule)) as unknown))
+}
+
+const JOINERY_KEYS: (keyof JoinerySettings)[] = [
+  'style',
+  'fastenersPerJoint',
+  'fastenerDiameter',
+  'fastenerDepth',
+  'endInset',
+]
+
+const JOINT_STYLE_VALUES = JOINT_STYLES.map(s => s.value)
+
+function sanitizeJoinery(input: Partial<JoinerySettings> | null | undefined): JoinerySettings {
+  const source = input ?? {}
+  const positive = (value: unknown, fallback: number) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? Math.min(1, Math.round(value * 1_000_000) / 1_000_000)
+      : fallback
+  return {
+    style: typeof source.style === 'string' && JOINT_STYLE_VALUES.includes(source.style as never)
+      ? source.style
+      : DEFAULT_JOINERY_SETTINGS.style,
+    fastenersPerJoint: typeof source.fastenersPerJoint === 'number' && Number.isFinite(source.fastenersPerJoint)
+      ? Math.max(1, Math.min(16, Math.round(source.fastenersPerJoint)))
+      : DEFAULT_JOINERY_SETTINGS.fastenersPerJoint,
+    fastenerDiameter: positive(source.fastenerDiameter, DEFAULT_JOINERY_SETTINGS.fastenerDiameter),
+    fastenerDepth: positive(source.fastenerDepth, DEFAULT_JOINERY_SETTINGS.fastenerDepth),
+    endInset: positive(source.endInset, DEFAULT_JOINERY_SETTINGS.endInset),
+  }
+}
+
+function readJoinery(map: Y.Map<unknown>): JoinerySettings {
+  const joinery = map.get('joinery') as Y.Map<unknown> | undefined
+  if (!joinery) return { ...DEFAULT_JOINERY_SETTINGS }
+  const raw: Record<string, unknown> = {}
+  for (const key of JOINERY_KEYS) raw[key] = joinery.get(key)
+  return sanitizeJoinery(raw as Partial<JoinerySettings>)
+}
+
+/** Read the `routerProfiles` branch as a POJO, filling any gap with defaults. */
+function readRouterProfiles(map: Y.Map<unknown>): RouterProfileMap {
+  const profiles = map.get('routerProfiles') as Y.Map<unknown> | undefined
+  if (!profiles) return defaultRouterProfileMap()
+  const raw: Record<string, unknown> = {}
+  for (const role of ALL_PANEL_ROLES) {
+    const entry = profiles.get(role)
+    if (entry) raw[role] = entry
+  }
+  return sanitizeRouterProfileMap(raw)
+}
+
+function writeRouterProfile(target: Y.Map<unknown>, role: string, profile: RouterProfile) {
+  // Stored as plain JSON: a profile is picked as a unit, so per-field CRDT
+  // merge would only ever produce combinations nobody chose.
+  target.set(role, JSON.parse(JSON.stringify(profile)) as unknown)
+}
+
+const TRANSPORT_KEYS: (keyof TransportLimits)[] = ['width', 'height', 'length']
+
+function readVariables(map: Y.Map<unknown>): ProjectVariable[] {
+  const variables = map.get('variables') as Y.Array<unknown> | undefined
+  return variables ? sanitizeVariables(variables.toArray()) : []
+}
+
+function writeVariables(map: Y.Map<unknown>, variables: ProjectVariable[]) {
+  let array = map.get('variables') as Y.Array<unknown> | undefined
+  if (!array) {
+    array = new Y.Array<unknown>()
+    map.set('variables', array)
+  }
+  if (array.length > 0) array.delete(0, array.length)
+  const capped = variables.slice(0, MAX_VARIABLES)
+  if (capped.length > 0) array.insert(0, capped.map(v => JSON.parse(JSON.stringify(v)) as unknown))
+}
+
+function readTransport(map: Y.Map<unknown>): TransportLimits {
+  const transport = map.get('transport') as Y.Map<unknown> | undefined
+  if (!transport) return { ...DEFAULT_TRANSPORT_LIMITS }
+  const clean = { ...DEFAULT_TRANSPORT_LIMITS }
+  for (const key of TRANSPORT_KEYS) {
+    const value = transport.get(key)
+    clean[key] = typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? Math.min(50, Math.round(value * 1_000_000) / 1_000_000)
+      : 0
+  }
+  return clean
+}
+
+/** Read the `outlines` branch as a POJO, filling any gap with defaults. */
+function readOutlines(map: Y.Map<unknown>): OutlineMap {
+  const outlines = map.get('outlines') as Y.Map<unknown> | undefined
+  if (!outlines) return defaultOutlineMap()
+  const raw: Record<string, unknown> = {}
+  for (const role of ALL_PANEL_ROLES) {
+    const entry = outlines.get(role)
+    if (entry) raw[role] = entry
+  }
+  return sanitizeOutlineMap(raw)
+}
+
+function writeOutline(target: Y.Map<unknown>, role: string, outline: PanelOutline) {
+  target.set(role, JSON.parse(JSON.stringify(outline)) as unknown)
+}
+
+function readFreePanels(map: Y.Map<unknown>): FreePanel[] {
+  const panels = map.get('freePanels') as Y.Array<unknown> | undefined
+  return panels ? sanitizeFreePanels(panels.toArray()) : []
+}
+
+/** Free panels are edited whole (moved, resized, deleted), so they are stored
+ *  as plain JSON rather than nested Y.Maps — per-field merge would only ever
+ *  produce boards nobody placed. */
+function writeFreePanels(map: Y.Map<unknown>, panels: FreePanel[]) {
+  let array = map.get('freePanels') as Y.Array<unknown> | undefined
+  if (!array) {
+    array = new Y.Array<unknown>()
+    map.set('freePanels', array)
+  }
+  if (array.length > 0) array.delete(0, array.length)
+  const capped = panels.slice(0, MAX_FREE_PANELS)
+  if (capped.length > 0) array.insert(0, capped.map(panel => JSON.parse(JSON.stringify(panel)) as unknown))
+}
+
+/** Read the `settings` branch as a POJO, filling any gap with the default. */
+function readSettingsMap(map: Y.Map<unknown>): ProjectSettings {
+  const settings = map.get('settings') as Y.Map<unknown> | undefined
+  if (!settings) return { ...DEFAULT_PROJECT_SETTINGS }
+  const raw: Record<string, unknown> = {}
+  for (const key of PROJECT_SETTINGS_KEYS) raw[key] = settings.get(key)
+  return sanitizeProjectSettings(raw as Partial<ProjectSettings>)
 }
 
 export function getFurnitureMap(doc: Y.Doc): Y.Map<unknown> {
@@ -85,6 +362,94 @@ export function ensureInitialized(doc: Y.Doc) {
         }
       }
     }
+    // `settings` is presentation-only, so a doc written before it existed is
+    // simply seeded with the defaults — no schema bump or migration needed.
+    if (!map.has('settings')) {
+      const settings = new Y.Map<unknown>()
+      for (const key of PROJECT_SETTINGS_KEYS) settings.set(key, DEFAULT_PROJECT_SETTINGS[key])
+      map.set('settings', settings)
+    }
+    else {
+      const settings = map.get('settings') as Y.Map<unknown>
+      const raw: Record<string, unknown> = {}
+      for (const key of PROJECT_SETTINGS_KEYS) raw[key] = settings.get(key)
+      const clean = sanitizeProjectSettings(raw as Partial<ProjectSettings>)
+      for (const key of PROJECT_SETTINGS_KEYS) {
+        if (settings.get(key) !== clean[key]) settings.set(key, clean[key])
+      }
+    }
+    // Like `settings`, panel attributes are additive — old docs simply seed
+    // the defaults (grain along length, no banding), so no schema bump.
+    if (!map.has('panelAttributes')) {
+      const attributes = new Y.Map<unknown>()
+      map.set('panelAttributes', attributes)
+      const defaults = defaultPanelAttributeMap()
+      for (const role of ALL_PANEL_ROLES) writePanelAttributes(attributes, role, defaults[role])
+    }
+    else {
+      const attributes = map.get('panelAttributes') as Y.Map<unknown>
+      const clean = readPanelAttributesMap(map)
+      for (const role of ALL_PANEL_ROLES) writePanelAttributes(attributes, role, clean[role])
+    }
+    // Drilling is additive too — an old doc starts with no rules, which
+    // compiles to exactly the panels it produced before.
+    if (!map.has('drilling')) {
+      const drilling = new Y.Map<unknown>()
+      map.set('drilling', drilling)
+      for (const role of ALL_PANEL_ROLES) writeDrillingRules(drilling, role, [])
+    }
+    else {
+      const drilling = map.get('drilling') as Y.Map<unknown>
+      const clean = readDrillingMap(map)
+      for (const role of ALL_PANEL_ROLES) writeDrillingRules(drilling, role, clean[role])
+    }
+    // Joinery defaults to `butt`, which emits nothing — so an old doc compiles
+    // to exactly the panels it did before.
+    if (!map.has('joinery')) {
+      const joinery = new Y.Map<unknown>()
+      for (const key of JOINERY_KEYS) joinery.set(key, DEFAULT_JOINERY_SETTINGS[key])
+      map.set('joinery', joinery)
+    }
+    else {
+      const joinery = map.get('joinery') as Y.Map<unknown>
+      const clean = readJoinery(map)
+      for (const key of JOINERY_KEYS) {
+        if (joinery.get(key) !== clean[key]) joinery.set(key, clean[key])
+      }
+    }
+    // Router profiles default to a square edge, which cuts nothing.
+    if (!map.has('routerProfiles')) {
+      const profiles = new Y.Map<unknown>()
+      map.set('routerProfiles', profiles)
+      const defaults = defaultRouterProfileMap()
+      for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, defaults[role])
+    }
+    else {
+      const profiles = map.get('routerProfiles') as Y.Map<unknown>
+      const clean = readRouterProfiles(map)
+      for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, clean[role])
+    }
+    if (!map.has('freePanels')) map.set('freePanels', new Y.Array<unknown>())
+    if (!map.has('variables')) map.set('variables', new Y.Array<unknown>())
+    // Transport limits default to 0 = unchecked, so nothing is flagged until
+    // the user actually states a door width or a van length.
+    if (!map.has('transport')) {
+      const transport = new Y.Map<unknown>()
+      for (const key of TRANSPORT_KEYS) transport.set(key, DEFAULT_TRANSPORT_LIMITS[key])
+      map.set('transport', transport)
+    }
+    // Outlines default to `rectangle`, which keeps every panel on the box path.
+    if (!map.has('outlines')) {
+      const outlines = new Y.Map<unknown>()
+      map.set('outlines', outlines)
+      const defaults = defaultOutlineMap()
+      for (const role of ALL_PANEL_ROLES) writeOutline(outlines, role, defaults[role])
+    }
+    else {
+      const outlines = map.get('outlines') as Y.Map<unknown>
+      const clean = readOutlines(map)
+      for (const role of ALL_PANEL_ROLES) writeOutline(outlines, role, clean[role])
+    }
     runPendingMigrations(doc)
     if (!map.has('columns')) {
       const cols = new Y.Array<Y.Map<unknown>>()
@@ -108,7 +473,7 @@ export function ensureInitialized(doc: Y.Doc) {
         }
         const rawType = module.get('type')
         const type = rawType === 'drawers' ? 'drawer' : rawType
-        if (type !== 'shelf' && type !== 'shelves' && type !== 'dividers' && type !== 'drawer' && type !== 'doors' && type !== 'left-door' && type !== 'right-door') {
+        if (type !== 'shelf' && type !== 'shelves' && type !== 'dividers' && type !== 'frame' && type !== 'drawer' && type !== 'doors' && type !== 'left-door' && type !== 'right-door') {
           module.set('type', 'shelf')
         }
         else if (type !== rawType) {
@@ -154,6 +519,18 @@ export function ensureInitialized(doc: Y.Doc) {
         else if (module.has('dividerCount')) {
           module.delete('dividerCount')
         }
+        if (module.get('type') === 'frame') {
+          for (const [key, fallback] of [['frameRailCount', DEFAULT_FRAME_RAIL_COUNT], ['frameStileCount', DEFAULT_FRAME_STILE_COUNT]] as const) {
+            const value = module.get(key)
+            module.set(key, typeof value === 'number' && Number.isFinite(value)
+              ? Math.max(FRAME_MEMBER_COUNT_MIN, Math.min(FRAME_MEMBER_COUNT_MAX, Math.round(value)))
+              : fallback)
+          }
+        }
+        else {
+          if (module.has('frameRailCount')) module.delete('frameRailCount')
+          if (module.has('frameStileCount')) module.delete('frameStileCount')
+        }
       })
     })
   }, 'init')
@@ -192,7 +569,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     ms?.forEach((mm) => {
       const id = (mm.get('id') as string) ?? cryptoRandomId()
       const rawType = mm.get('type')
-      const type: ModuleType = rawType === 'drawer' || rawType === 'doors' || rawType === 'left-door' || rawType === 'right-door' || rawType === 'shelf' || rawType === 'shelves' || rawType === 'dividers' ? rawType : 'shelf'
+      const type: ModuleType = rawType === 'drawer' || rawType === 'doors' || rawType === 'left-door' || rawType === 'right-door' || rawType === 'shelf' || rawType === 'shelves' || rawType === 'dividers' || rawType === 'frame' ? rawType : 'shelf'
       const rawHeight = mm.get('height')
       const height = typeof rawHeight === 'number' && Number.isFinite(rawHeight) && rawHeight > 0 ? snapMetric(rawHeight) : DEFAULT_SHELF_HEIGHT
       const drawerCount = mm.get('drawerCount') as number | undefined
@@ -208,6 +585,16 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
       if (type === 'dividers' && typeof dividerCount === 'number' && Number.isFinite(dividerCount)) {
         m.dividerCount = Math.max(DIVIDER_COUNT_MIN, Math.min(DIVIDER_COUNT_MAX, Math.round(dividerCount)))
       }
+      if (type === 'frame') {
+        const railCount = mm.get('frameRailCount')
+        const stileCount = mm.get('frameStileCount')
+        m.frameRailCount = typeof railCount === 'number' && Number.isFinite(railCount)
+          ? Math.max(FRAME_MEMBER_COUNT_MIN, Math.min(FRAME_MEMBER_COUNT_MAX, Math.round(railCount)))
+          : DEFAULT_FRAME_RAIL_COUNT
+        m.frameStileCount = typeof stileCount === 'number' && Number.isFinite(stileCount)
+          ? Math.max(FRAME_MEMBER_COUNT_MIN, Math.min(FRAME_MEMBER_COUNT_MAX, Math.round(stileCount)))
+          : DEFAULT_FRAME_STILE_COUNT
+      }
       modules.push(m)
     })
     columns.push({ width, modules })
@@ -216,6 +603,15 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     schemaVersion: (map.get('schemaVersion') as number) ?? DESIGN_SCHEMA_VERSION,
     lastAppliedMigrationId: (map.get('lastAppliedMigrationId') as string | null) ?? null,
     config,
+    settings: readSettingsMap(map),
+    panelAttributes: readPanelAttributesMap(map),
+    drilling: readDrillingMap(map),
+    joinery: readJoinery(map),
+    routerProfiles: readRouterProfiles(map),
+    freePanels: readFreePanels(map),
+    outlines: readOutlines(map),
+    variables: readVariables(map),
+    transport: readTransport(map),
     columns,
   }
 }
@@ -229,6 +625,8 @@ export function toYModule(m: FurnitureModule): Y.Map<unknown> {
   if (typeof m.drawerCount === 'number') y.set('drawerCount', m.drawerCount)
   if (typeof m.shelfCount === 'number') y.set('shelfCount', m.shelfCount)
   if (typeof m.dividerCount === 'number') y.set('dividerCount', m.dividerCount)
+  if (typeof m.frameRailCount === 'number') y.set('frameRailCount', m.frameRailCount)
+  if (typeof m.frameStileCount === 'number') y.set('frameStileCount', m.frameStileCount)
   return y
 }
 
@@ -273,6 +671,10 @@ export function insertModule(doc: Y.Doc, columnIndex: number, atIndex: number, t
     if (type === 'drawer') m.drawerCount = DEFAULT_DRAWER_COUNT
     if (type === 'shelves') m.shelfCount = DEFAULT_SHELF_COUNT
     if (type === 'dividers') m.dividerCount = DEFAULT_DIVIDER_COUNT
+    if (type === 'frame') {
+      m.frameRailCount = DEFAULT_FRAME_RAIL_COUNT
+      m.frameStileCount = DEFAULT_FRAME_STILE_COUNT
+    }
     ms.insert(atIndex, [toYModule(m)])
   }, 'insertModule')
 }
@@ -296,6 +698,14 @@ export function setModuleType(doc: Y.Doc, columnIndex: number, moduleIndex: numb
     if (type !== 'shelves' && m.has('shelfCount')) m.delete('shelfCount')
     if (type === 'dividers' && !m.has('dividerCount')) m.set('dividerCount', DEFAULT_DIVIDER_COUNT)
     if (type !== 'dividers' && m.has('dividerCount')) m.delete('dividerCount')
+    if (type === 'frame') {
+      if (!m.has('frameRailCount')) m.set('frameRailCount', DEFAULT_FRAME_RAIL_COUNT)
+      if (!m.has('frameStileCount')) m.set('frameStileCount', DEFAULT_FRAME_STILE_COUNT)
+    }
+    else {
+      if (m.has('frameRailCount')) m.delete('frameRailCount')
+      if (m.has('frameStileCount')) m.delete('frameStileCount')
+    }
   }, 'setModuleType')
 }
 
@@ -333,6 +743,15 @@ export function setDividerCount(doc: Y.Doc, columnIndex: number, moduleIndex: nu
   }, 'setDividerCount')
 }
 
+export function setFrameMemberCount(doc: Y.Doc, columnIndex: number, moduleIndex: number, key: 'frameRailCount' | 'frameStileCount', value: number) {
+  doc.transact(() => {
+    const ms = (getFurnitureMap(doc).get('columns') as Y.Array<Y.Map<unknown>>).get(columnIndex)?.get('modules') as Y.Array<Y.Map<unknown>>
+    const m = ms?.get(moduleIndex)
+    if (!m) return
+    m.set(key, Math.max(FRAME_MEMBER_COUNT_MIN, Math.min(FRAME_MEMBER_COUNT_MAX, Math.round(value))))
+  }, 'setFrameMemberCount')
+}
+
 export function setConfigValue<K extends keyof FurnitureConfig>(doc: Y.Doc, key: K, value: FurnitureConfig[K]) {
   doc.transact(() => {
     const cfg = getFurnitureMap(doc).get('config') as Y.Map<unknown>
@@ -340,10 +759,319 @@ export function setConfigValue<K extends keyof FurnitureConfig>(doc: Y.Doc, key:
   }, 'setConfigValue')
 }
 
-export function replaceFurnitureDoc(doc: Y.Doc, next: Pick<FurnitureDoc, 'config' | 'columns'>) {
+export function setSettingValue<K extends keyof ProjectSettings>(doc: Y.Doc, key: K, value: ProjectSettings[K]) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let settings = map.get('settings') as Y.Map<unknown> | undefined
+    if (!settings) {
+      settings = new Y.Map<unknown>()
+      for (const k of PROJECT_SETTINGS_KEYS) settings.set(k, DEFAULT_PROJECT_SETTINGS[k])
+      map.set('settings', settings)
+    }
+    const current = readSettingsMap(map)
+    const clean = sanitizeProjectSettings({ ...current, [key]: value })
+    settings.set(key as string, clean[key])
+  }, 'setSettingValue')
+}
+
+export function setPanelAttributes(doc: Y.Doc, role: string, value: Partial<PanelAttributes>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let attributes = map.get('panelAttributes') as Y.Map<unknown> | undefined
+    if (!attributes) {
+      attributes = new Y.Map<unknown>()
+      map.set('panelAttributes', attributes)
+    }
+    const current = readPanelAttributesMap(map)[role as keyof PanelAttributeMap]
+    writePanelAttributes(attributes, role, sanitizePanelAttributes({ ...current, ...value }))
+  }, 'setPanelAttributes')
+}
+
+function drillingMapFor(doc: Y.Doc): { map: Y.Map<unknown>, drilling: Y.Map<unknown> } {
+  const map = getFurnitureMap(doc)
+  let drilling = map.get('drilling') as Y.Map<unknown> | undefined
+  if (!drilling) {
+    drilling = new Y.Map<unknown>()
+    map.set('drilling', drilling)
+  }
+  return { map, drilling }
+}
+
+export function addDrillingRule(doc: Y.Doc, role: string) {
+  doc.transact(() => {
+    const { map, drilling } = drillingMapFor(doc)
+    const rules = readDrillingMap(map)[role as keyof DrillingMap] ?? []
+    const next = [...rules, defaultDrillingRule(`${role}-${cryptoRandomId()}`)]
+    writeDrillingRules(drilling, role, next)
+  }, 'addDrillingRule')
+}
+
+export function removeDrillingRule(doc: Y.Doc, role: string, ruleId: string) {
+  doc.transact(() => {
+    const { map, drilling } = drillingMapFor(doc)
+    const rules = readDrillingMap(map)[role as keyof DrillingMap] ?? []
+    writeDrillingRules(drilling, role, rules.filter(rule => rule.id !== ruleId))
+  }, 'removeDrillingRule')
+}
+
+export function updateDrillingRule(doc: Y.Doc, role: string, ruleId: string, patch: Partial<DrillingRule>) {
+  doc.transact(() => {
+    const { map, drilling } = drillingMapFor(doc)
+    const rules = readDrillingMap(map)[role as keyof DrillingMap] ?? []
+    const next = rules.map(rule =>
+      rule.id === ruleId
+        ? { ...rule, ...patch, pattern: { ...rule.pattern, ...(patch.pattern ?? {}) } }
+        : rule,
+    )
+    writeDrillingRules(drilling, role, sanitizeDrillingMap({ [role]: next })[role as keyof DrillingMap])
+  }, 'updateDrillingRule')
+}
+
+// ---------------- Variables & transport ----------------
+
+export function addVariable(doc: Y.Doc): string {
+  const id = cryptoRandomId()
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    writeVariables(map, [...readVariables(map), defaultVariable(id)])
+  }, 'addVariable')
+  return id
+}
+
+export function removeVariable(doc: Y.Doc, id: string) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    writeVariables(map, readVariables(map).filter(v => v.id !== id))
+  }, 'removeVariable')
+}
+
+export function updateVariable(doc: Y.Doc, id: string, patch: Partial<ProjectVariable>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    writeVariables(map, readVariables(map).map(v => (v.id === id ? { ...v, ...patch } : v)))
+  }, 'updateVariable')
+}
+
+export function setTransportLimit(doc: Y.Doc, key: keyof TransportLimits, value: number) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let transport = map.get('transport') as Y.Map<unknown> | undefined
+    if (!transport) {
+      transport = new Y.Map<unknown>()
+      map.set('transport', transport)
+    }
+    transport.set(key, Number.isFinite(value) && value >= 0 ? Math.min(50, value) : 0)
+  }, 'setTransportLimit')
+}
+
+export function setPanelOutline(doc: Y.Doc, role: string, patch: Partial<PanelOutline>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let outlines = map.get('outlines') as Y.Map<unknown> | undefined
+    if (!outlines) {
+      outlines = new Y.Map<unknown>()
+      map.set('outlines', outlines)
+    }
+    const current = readOutlines(map)[role as keyof OutlineMap]
+    writeOutline(outlines, role, sanitizeOutline({ ...current, ...patch }))
+  }, 'setPanelOutline')
+}
+
+export function resetPanelOutlines(doc: Y.Doc) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let outlines = map.get('outlines') as Y.Map<unknown> | undefined
+    if (!outlines) {
+      outlines = new Y.Map<unknown>()
+      map.set('outlines', outlines)
+    }
+    const defaults = defaultOutlineMap()
+    for (const role of ALL_PANEL_ROLES) writeOutline(outlines, role, defaults[role])
+  }, 'resetPanelOutlines')
+}
+
+// ---------------- Free panels ----------------
+
+function mutateFreePanels(doc: Y.Doc, origin: string, mutate: (panels: FreePanel[]) => FreePanel[]) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    writeFreePanels(map, mutate(readFreePanels(map)))
+  }, origin)
+}
+
+export function addFreePanel(doc: Y.Doc, plane: PanelPlane, position?: Partial<Vec3>): string {
+  const id = cryptoRandomId()
+  mutateFreePanels(doc, 'addFreePanel', panels => [...panels, makeFreePanel({ id, plane, position })])
+  return id
+}
+
+export function removeFreePanels(doc: Y.Doc, ids: string[]) {
+  const drop = new Set(ids)
+  mutateFreePanels(doc, 'removeFreePanels', panels => panels.filter(panel => !drop.has(panel.id)))
+}
+
+export function updateFreePanel(doc: Y.Doc, id: string, patch: Partial<FreePanel>) {
+  mutateFreePanels(doc, 'updateFreePanel', panels => panels.map(panel =>
+    panel.id === id
+      ? {
+          ...panel,
+          ...patch,
+          size: { ...panel.size, ...(patch.size ?? {}) },
+          position: { ...panel.position, ...(patch.position ?? {}) },
+        }
+      : panel,
+  ))
+}
+
+export function nudgeFreePanels(doc: Y.Doc, ids: string[], axis: WorldAxis, direction: 1 | -1) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'nudgeFreePanels', panels =>
+    panels.map(panel => (set.has(panel.id) ? movedByThickness(panel, axis, direction) : panel)))
+}
+
+export function moveFreePanels(doc: Y.Doc, ids: string[], delta: Partial<Vec3>) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'moveFreePanels', panels =>
+    panels.map(panel => (set.has(panel.id) ? movedBy(panel, delta) : panel)))
+}
+
+export function resizeFreePanels(doc: Y.Doc, ids: string[], axis: WorldAxis, delta: number) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'resizeFreePanels', panels =>
+    panels.map(panel => (set.has(panel.id) ? resizedOnAxis(panel, axis, delta) : panel)))
+}
+
+export function duplicateFreePanelToPlane(doc: Y.Doc, id: string, plane: PanelPlane) {
+  mutateFreePanels(doc, 'duplicateFreePanelToPlane', (panels) => {
+    const source = panels.find(panel => panel.id === id)
+    return source ? [...panels, copiedToPlane(source, cryptoRandomId(), plane)] : panels
+  })
+}
+
+export function addPanelFromFace(doc: Y.Doc, id: string) {
+  mutateFreePanels(doc, 'addPanelFromFace', (panels) => {
+    const source = panels.find(panel => panel.id === id)
+    return source ? [...panels, panelFromFace(source, cryptoRandomId())] : panels
+  })
+}
+
+export function addPanelBetween(doc: Y.Doc, firstId: string, secondId: string) {
+  mutateFreePanels(doc, 'addPanelBetween', (panels) => {
+    const a = panels.find(panel => panel.id === firstId)
+    const b = panels.find(panel => panel.id === secondId)
+    if (!a || !b) return panels
+    const between = panelBetween(a, b, cryptoRandomId())
+    return between ? [...panels, between] : panels
+  })
+}
+
+export function centerFreePanels(doc: Y.Doc, ids: string[]) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'centerFreePanels', (panels) => {
+    const others = panels.filter(panel => !set.has(panel.id))
+    if (others.length === 0) return panels
+    return panels.map(panel => (set.has(panel.id) ? centeredOn(panel, others) : panel))
+  })
+}
+
+export function spaceFreePanelsEqually(doc: Y.Doc, ids: string[], axis: WorldAxis) {
+  const set = new Set(ids)
+  mutateFreePanels(doc, 'spaceFreePanelsEqually', (panels) => {
+    const selected = panels.filter(panel => set.has(panel.id))
+    const spaced = new Map(equallySpaced(selected, axis).map(panel => [panel.id, panel]))
+    return panels.map(panel => spaced.get(panel.id) ?? panel)
+  })
+}
+
+export function setRouterProfile(doc: Y.Doc, role: string, patch: Partial<RouterProfile>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let profiles = map.get('routerProfiles') as Y.Map<unknown> | undefined
+    if (!profiles) {
+      profiles = new Y.Map<unknown>()
+      map.set('routerProfiles', profiles)
+    }
+    const current = readRouterProfiles(map)[role as keyof RouterProfileMap]
+    writeRouterProfile(profiles, role, sanitizeRouterProfile({
+      ...current,
+      ...patch,
+      edges: { ...current.edges, ...(patch.edges ?? {}) },
+    }))
+  }, 'setRouterProfile')
+}
+
+export function resetRouterProfiles(doc: Y.Doc) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let profiles = map.get('routerProfiles') as Y.Map<unknown> | undefined
+    if (!profiles) {
+      profiles = new Y.Map<unknown>()
+      map.set('routerProfiles', profiles)
+    }
+    const defaults = defaultRouterProfileMap()
+    for (const role of ALL_PANEL_ROLES) writeRouterProfile(profiles, role, defaults[role])
+  }, 'resetRouterProfiles')
+}
+
+export function setJoineryValue<K extends keyof JoinerySettings>(doc: Y.Doc, key: K, value: JoinerySettings[K]) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let joinery = map.get('joinery') as Y.Map<unknown> | undefined
+    if (!joinery) {
+      joinery = new Y.Map<unknown>()
+      for (const k of JOINERY_KEYS) joinery.set(k, DEFAULT_JOINERY_SETTINGS[k])
+      map.set('joinery', joinery)
+    }
+    const clean = sanitizeJoinery({ ...readJoinery(map), [key]: value })
+    joinery.set(key as string, clean[key])
+  }, 'setJoineryValue')
+}
+
+export function resetDrilling(doc: Y.Doc) {
+  doc.transact(() => {
+    const { drilling } = drillingMapFor(doc)
+    for (const role of ALL_PANEL_ROLES) writeDrillingRules(drilling, role, [])
+  }, 'resetDrilling')
+}
+
+export function resetPanelAttributes(doc: Y.Doc) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let attributes = map.get('panelAttributes') as Y.Map<unknown> | undefined
+    if (!attributes) {
+      attributes = new Y.Map<unknown>()
+      map.set('panelAttributes', attributes)
+    }
+    const defaults = defaultPanelAttributeMap()
+    for (const role of ALL_PANEL_ROLES) writePanelAttributes(attributes, role, defaults[role])
+  }, 'resetPanelAttributes')
+}
+
+export function resetSettings(doc: Y.Doc) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let settings = map.get('settings') as Y.Map<unknown> | undefined
+    if (!settings) {
+      settings = new Y.Map<unknown>()
+      map.set('settings', settings)
+    }
+    for (const key of PROJECT_SETTINGS_KEYS) settings.set(key, DEFAULT_PROJECT_SETTINGS[key])
+  }, 'resetSettings')
+}
+
+export function replaceFurnitureDoc(doc: Y.Doc, next: Pick<FurnitureDoc, 'config' | 'columns'> & Partial<Pick<FurnitureDoc, 'settings'>>) {
   doc.transact(() => {
     const map = getFurnitureMap(doc)
     map.set('schemaVersion', DESIGN_SCHEMA_VERSION)
+    if (next.settings) {
+      let settings = map.get('settings') as Y.Map<unknown> | undefined
+      if (!settings) {
+        settings = new Y.Map<unknown>()
+        map.set('settings', settings)
+      }
+      const clean = sanitizeProjectSettings(next.settings)
+      for (const key of PROJECT_SETTINGS_KEYS) settings.set(key, clean[key])
+    }
     let cfg = map.get('config') as Y.Map<unknown> | undefined
     if (!cfg) {
       cfg = new Y.Map<unknown>()

@@ -27,6 +27,10 @@ export interface PanelMaterialSpec {
   /** World-space grain density in tiles-per-meter. Higher = tighter pattern.
    *  Defaults to 5 (one stripe roughly every 20cm of panel face). */
   grainScale?: number
+  /** Rotation of the grain pattern, in radians. Drives the grain-direction
+   *  options ported from Woodworking's `grainH` / `grainV`; see
+   *  `shared/domain/panel-attributes.ts › grainRotationFor`. Defaults to 0. */
+  grainRotation?: number
 }
 
 export function makePanelMaterial(
@@ -46,7 +50,7 @@ export function makePanelMaterial(
     })
     const grainTex = spec.grain ? getGrainTexture(spec.grain) : null
     if (grainTex) {
-      attachTriplanarGrain(material, grainTex, spec.grainScale ?? 5)
+      attachTriplanarGrain(material, grainTex, spec.grainScale ?? 5, spec.grainRotation ?? 0)
     }
     return material
   }
@@ -157,6 +161,7 @@ function attachTriplanarGrain(
   material: THREE.MeshStandardMaterial,
   grainTex: THREE.DataTexture,
   tilesPerMeter: number,
+  rotationRadians: number,
 ): void {
   // Expose the texture so Three's built-in resource tracking disposes it
   // alongside the material on cleanup. Setting `map` also lets MeshStandard's
@@ -164,9 +169,11 @@ function attachTriplanarGrain(
   // the shader injection below).
   material.map = grainTex
   material.userData.grainScale = tilesPerMeter
+  material.userData.grainRotation = rotationRadians
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uGrainScale = { value: tilesPerMeter }
+    shader.uniforms.uGrainRotation = { value: rotationRadians }
 
     // -- VERTEX: pass world position + world normal to the fragment shader.
     shader.vertexShader = shader.vertexShader
@@ -191,7 +198,16 @@ vWorldNormal_grain = normalize(mat3(modelMatrix) * objectNormal);`,
         `#include <common>
 varying vec3 vWorldPos_grain;
 varying vec3 vWorldNormal_grain;
-uniform float uGrainScale;`,
+uniform float uGrainScale;
+uniform float uGrainRotation;
+
+// Spin a triplanar sample coord within its own plane so the stripe direction
+// follows the panel rather than the world axes.
+vec2 rotateGrainUv(vec2 uv, float angle) {
+  float c = cos(angle);
+  float s = sin(angle);
+  return vec2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
+}`,
       )
       .replace(
         '#include <map_fragment>',
@@ -199,9 +215,9 @@ uniform float uGrainScale;`,
 vec3 blend = abs(vWorldNormal_grain);
 blend = pow(blend, vec3(4.0));
 blend /= max(blend.x + blend.y + blend.z, 1e-5);
-vec2 uvX = vWorldPos_grain.zy * uGrainScale;
-vec2 uvY = vWorldPos_grain.xz * uGrainScale;
-vec2 uvZ = vWorldPos_grain.xy * uGrainScale;
+vec2 uvX = rotateGrainUv(vWorldPos_grain.zy * uGrainScale, uGrainRotation);
+vec2 uvY = rotateGrainUv(vWorldPos_grain.xz * uGrainScale, uGrainRotation);
+vec2 uvZ = rotateGrainUv(vWorldPos_grain.xy * uGrainScale, uGrainRotation);
 vec3 cX = texture2D(map, uvX).rgb;
 vec3 cY = texture2D(map, uvY).rgb;
 vec3 cZ = texture2D(map, uvZ).rgb;

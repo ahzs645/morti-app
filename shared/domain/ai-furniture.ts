@@ -1,10 +1,17 @@
 import {
   DEFAULT_FURNITURE_CONFIG,
+  DEFAULT_PROJECT_SETTINGS,
   DRAWER_COUNT_MAX,
   DRAWER_COUNT_MIN,
   cryptoRandomId,
   snapConfig,
 } from './defaults'
+import { defaultDrillingMap } from './drilling'
+import { DEFAULT_JOINERY_SETTINGS } from './joinery'
+import { defaultRouterProfileMap } from './router-profiles'
+import { defaultOutlineMap } from './outline'
+import { DEFAULT_TRANSPORT_LIMITS } from './occupied-space'
+import { defaultPanelAttributeMap } from './panel-attributes'
 import {
   DESIGN_SCHEMA_VERSION,
   type FurnitureColumn,
@@ -121,6 +128,15 @@ function cloneDraft(draft: AiFurnitureDraft): AiFurnitureDraft {
       schemaVersion: draft.doc.schemaVersion,
       lastAppliedMigrationId: draft.doc.lastAppliedMigrationId,
       config: { ...draft.doc.config },
+      settings: { ...draft.doc.settings },
+      panelAttributes: draft.doc.panelAttributes,
+      drilling: draft.doc.drilling,
+      joinery: { ...draft.doc.joinery },
+      routerProfiles: draft.doc.routerProfiles,
+      freePanels: draft.doc.freePanels.map(panel => ({ ...panel })),
+      outlines: draft.doc.outlines,
+      variables: draft.doc.variables.map(v => ({ ...v })),
+      transport: { ...draft.doc.transport },
       columns: draft.doc.columns.map(column => ({
         width: column.width,
         modules: column.modules.map(module => ({ ...module })),
@@ -349,6 +365,15 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
   return {
     schemaVersion: DESIGN_SCHEMA_VERSION,
     lastAppliedMigrationId: null,
+    settings: { ...DEFAULT_PROJECT_SETTINGS },
+    panelAttributes: defaultPanelAttributeMap(),
+    drilling: defaultDrillingMap(),
+    joinery: { ...DEFAULT_JOINERY_SETTINGS },
+    routerProfiles: defaultRouterProfileMap(),
+    freePanels: [],
+    outlines: defaultOutlineMap(),
+    variables: [],
+    transport: { ...DEFAULT_TRANSPORT_LIMITS },
     config,
     columns,
   }
@@ -368,6 +393,15 @@ function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, curren
     doc: {
       schemaVersion: DESIGN_SCHEMA_VERSION,
       lastAppliedMigrationId: null,
+      settings: { ...DEFAULT_PROJECT_SETTINGS },
+      panelAttributes: defaultPanelAttributeMap(),
+      drilling: defaultDrillingMap(),
+      joinery: { ...DEFAULT_JOINERY_SETTINGS },
+      routerProfiles: defaultRouterProfileMap(),
+      freePanels: [],
+      outlines: defaultOutlineMap(),
+      variables: [],
+      transport: { ...DEFAULT_TRANSPORT_LIMITS },
       config,
       columns,
     },
@@ -392,6 +426,15 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
     doc: {
       schemaVersion: DESIGN_SCHEMA_VERSION,
       lastAppliedMigrationId: null,
+      settings: { ...DEFAULT_PROJECT_SETTINGS },
+      panelAttributes: defaultPanelAttributeMap(),
+      drilling: defaultDrillingMap(),
+      joinery: { ...DEFAULT_JOINERY_SETTINGS },
+      routerProfiles: defaultRouterProfileMap(),
+      freePanels: [],
+      outlines: defaultOutlineMap(),
+      variables: [],
+      transport: { ...DEFAULT_TRANSPORT_LIMITS },
       config,
       columns,
     },

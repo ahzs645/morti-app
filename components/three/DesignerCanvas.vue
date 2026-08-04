@@ -16,7 +16,15 @@ import {
 } from '~~/shared/three/outline'
 import { makePanelMaterial, type PanelMaterialMode, type PanelMaterialSpec } from '~~/shared/three/materials'
 import { DEFAULT_CAMERA_STATE, hexColorToNumber, normalizePublicStyle } from '~~/shared/domain/defaults'
-import { resolveMaterial, type CabinetPart } from '~~/shared/domain/materials'
+import { cabinetPartForRole, resolveMaterial, type CabinetPart } from '~~/shared/domain/materials'
+import {
+  attributesForRole,
+  defaultPanelAttributeMap,
+  grainRotationFor,
+  grainVisible,
+  type PanelAttributeMap,
+} from '~~/shared/domain/panel-attributes'
+import { findEdgeBand, PANEL_EDGES } from '~~/shared/domain/edgeband'
 import type { CameraState, CompiledPanel, FurnitureDoc, PanelOperation, PublicStyle } from '~~/shared/domain/types'
 
 // ---------------------------------------------------------------------------
@@ -551,10 +559,8 @@ const gridColor = computed(() => {
 })
 
 function partForPanel(panel: CompiledPanel): CabinetPart {
-  if (panel.role === 'vertical-side' || panel.role === 'vertical-divider') return 'sides'
-  if (panel.role === 'horizontal-deck' || panel.role === 'internal-shelf') return 'deck'
-  if (panel.role === 'door-front' || panel.role === 'drawer-front') return 'fronts'
-  return 'carcass'
+  // Single source of truth, shared with the costing rollup.
+  return cabinetPartForRole(panel.role)
 }
 
 function legacyHexForPart(part: CabinetPart): string {
@@ -564,6 +570,10 @@ function legacyHexForPart(part: CabinetPart): string {
   if (part === 'fronts') return rendered.moduleFront
   return rendered.defaultPanel
 }
+
+// Grain and banding come off the doc branch, refreshed once per scene build so
+// every panel in a frame resolves against the same snapshot.
+let panelAttributes: PanelAttributeMap = defaultPanelAttributeMap()
 
 function panelMaterialSpec(panel: CompiledPanel): PanelMaterialSpec {
   if (props.renderMode === 'technical') {
@@ -579,11 +589,46 @@ function panelMaterialSpec(panel: CompiledPanel): PanelMaterialSpec {
   const assignment = resolvedPublicStyle.value.rendered.materials[part]
   const resolved = resolveMaterial(assignment.presetId, assignment.customColor, fallbackHex)
 
+  const attributes = attributesForRole(panelAttributes, panel.role)
+
   return {
     color: hexFromString(resolved.hex, 0xaaaaaa),
     roughness: resolved.roughness,
     metalness: resolved.metalness,
-    grain: resolved.grain,
+    // `grainX` suppresses the pattern outright, even on a grained species.
+    grain: grainVisible(attributes) ? resolved.grain : 'custom',
+    grainRotation: grainRotationFor(attributes, panel),
+  }
+}
+
+/**
+ * Thin coloured strips along banded edges — the visual counterpart to
+ * `bandApply`. Bare panels (the default) add no geometry at all, so this costs
+ * nothing until a band is actually assigned.
+ */
+function addEdgeBandStrips(group: THREE.Group, panel: CompiledPanel) {
+  if (props.renderMode === 'technical') return
+  const { bands } = attributesForRole(panelAttributes, panel.role)
+  for (const edge of PANEL_EDGES) {
+    const band = findEdgeBand(bands[edge])
+    if (!band) continue
+    const tape = band.thicknessMm / 1000
+    const horizontal = edge === 'top' || edge === 'bottom'
+    const geometry = horizontal
+      ? new THREE.BoxGeometry(panel.width, tape, panel.thickness)
+      : new THREE.BoxGeometry(tape, panel.height, panel.thickness)
+    addOutlineExcludeAttribute(geometry, 0)
+    const mesh = new THREE.Mesh(geometry, makePanelMaterial('shaded', {
+      color: hexFromString(band.colorHex, 0xc8a877),
+      roughness: 0.5,
+      metalness: 0.02,
+    }))
+    // Seat the strip just outside the panel face it wraps.
+    const offsetX = edge === 'left' ? -(panel.width + tape) / 2 : edge === 'right' ? (panel.width + tape) / 2 : 0
+    const offsetY = edge === 'bottom' ? -(panel.height + tape) / 2 : edge === 'top' ? (panel.height + tape) / 2 : 0
+    mesh.position.set(offsetX, offsetY, 0)
+    mesh.name = `${panel.key}:band:${edge}`
+    group.add(mesh)
   }
 }
 
@@ -731,10 +776,11 @@ function buildScene(options: BuildSceneOptions = {}) {
   const fd = readDoc()
   if (!fd) return
   cabinetDepthForTargets = fd.config.depth
+  panelAttributes = fd.panelAttributes
   const compiled = compileAssembly(fd)
   for (const panel of compiled.panels) {
     const group = new THREE.Group()
-    const geometry = compilePartGeometry(panel, compiled.operations)
+    const geometry = compilePartGeometry(panel, compiled.operations, fd.routerProfiles, fd.outlines)
     addOutlineExcludeAttribute(geometry, 0)
     const material = makePanelMaterial(panelMaterialMode(), panelMaterialSpec(panel))
     const mesh = new THREE.Mesh(geometry, material)
@@ -742,6 +788,7 @@ function buildScene(options: BuildSceneOptions = {}) {
     mesh.receiveShadow = panelMaterialMode() === 'shaded'
     mesh.name = panel.key
     group.add(mesh)
+    addEdgeBandStrips(group, panel)
     if (props.renderMode === 'technical') {
       addTechnicalOperationOverlays(group, panel, compiled.operations)
     }
