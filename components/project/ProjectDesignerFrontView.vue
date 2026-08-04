@@ -99,15 +99,35 @@ function isSelected(moduleId: string): boolean {
   return selectedSet.value.has(moduleId)
 }
 
+/**
+ * Module types with no front panel. They are open bays you can see into, so
+ * they render as an outline with their internal boards drawn on top — the same
+ * treatment `shelf` always had. Filling them solid makes shelves and dividers
+ * read as drawer and door fronts, which is the wrong part entirely.
+ */
+function isOpenBay(mod: FurnitureModule): boolean {
+  return mod.type === 'shelf' || mod.type === 'shelves' || mod.type === 'dividers' || mod.type === 'frame'
+}
+
 function moduleClass(mod: FurnitureModule): string {
   const moduleIsSelected = isSelected(mod.id)
-  if (mod.type === 'shelf') {
+  if (isOpenBay(mod)) {
     if (anySelected.value && !moduleIsSelected) return 'module-shelf module-shelf-dim'
     if (moduleIsSelected) return 'module-shelf module-shelf-selected'
     return 'module-shelf'
   }
   if (!anySelected.value || moduleIsSelected) return 'bg-primary'
   return 'bg-inverted opacity-10 ring ring-default/60 hover:opacity-10'
+}
+
+/** Fill for a board drawn inside an open bay — a real panel, so it is solid. */
+function boardClass(mod: FurnitureModule): string {
+  return !anySelected.value || isSelected(mod.id) ? 'bg-primary' : 'bg-inverted opacity-25'
+}
+
+/** A board's drawn thickness in px, never thinner than a hairline. */
+function boardThicknessPx(): string {
+  return `${Math.max(2, Math.round(props.config.panelThickness * pxPerMeter.value))}px`
 }
 
 function meterToPx(m: number): number {
@@ -481,7 +501,7 @@ function freePanelStyle(panel: FreePanel): Record<string, string> {
     left: `${Math.round(left)}px`,
     width: `${Math.max(1, Math.round(right - left))}px`,
     bottom: `${Math.round(bottom)}px`,
-    height: `${Math.max(1, Math.round(panel.size.y * pxPerMeter.value))}px`,
+    height: `${Math.max(3, Math.round(panel.size.y * pxPerMeter.value))}px`,
   }
 }
 
@@ -523,11 +543,12 @@ function addButtonMarginTop(boundaryIndex: number): string {
               :style="{ height: railBodyHeightPx }"
             >
               <!-- Free panels sit outside the column grid, so they are drawn
-                   as a dashed elevation overlay rather than as modules. -->
+                   as an elevation overlay rather than as modules. They are real
+                   boards in the 3D, so they read as solid boards here too. -->
               <div
                 v-for="panel in freePanels"
                 :key="`free-${panel.id}`"
-                class="pointer-events-none absolute z-10 rounded-[2px] border border-dashed border-primary/70 bg-primary/15"
+                class="pointer-events-none absolute z-10 rounded-[2px] bg-primary shadow-sm"
                 :style="freePanelStyle(panel)"
                 :aria-label="`Free panel ${panel.label}`"
               />
@@ -653,8 +674,12 @@ function addButtonMarginTop(boundaryIndex: number): string {
                             <div
                               v-for="i in shelfCount(mod)"
                               :key="`${mod.id}-shelf-${i}`"
-                              class="absolute left-0 right-0 bg-[var(--ui-bg-muted)]"
-                              :style="{ height: '2px', bottom: `${(i / (shelfCount(mod) + 1)) * 100}%` }"
+                              class="absolute left-0 right-0"
+                              :class="boardClass(mod)"
+                              :style="{
+                                height: boardThicknessPx(),
+                                bottom: `calc(${(i / (shelfCount(mod) + 1)) * 100}% - ${boardThicknessPx()} / 2)`,
+                              }"
                               aria-hidden="true"
                             />
                           </template>
@@ -665,14 +690,16 @@ function addButtonMarginTop(boundaryIndex: number): string {
                             <div
                               v-for="i in frameStileCount(mod) + 2"
                               :key="`${mod.id}-stile-${i}`"
-                              class="absolute top-0 bottom-0 bg-[var(--ui-bg-inverted)] opacity-45"
+                              class="absolute top-0 bottom-0"
+                              :class="boardClass(mod)"
                               :style="frameStileStyle(col.width, mod, i - 1)"
                               aria-hidden="true"
                             />
                             <div
                               v-for="i in frameRailCount(mod) + 2"
                               :key="`${mod.id}-rail-${i}`"
-                              class="absolute bg-[var(--ui-bg-inverted)] opacity-45"
+                              class="absolute"
+                              :class="boardClass(mod)"
                               :style="frameRailStyle(col.width, mod, i - 1)"
                               aria-hidden="true"
                             />
@@ -682,8 +709,12 @@ function addButtonMarginTop(boundaryIndex: number): string {
                             <div
                               v-for="i in dividerCount(mod)"
                               :key="`${mod.id}-divider-${i}`"
-                              class="absolute top-0 bottom-0 bg-[var(--ui-bg-muted)]"
-                              :style="{ width: '2px', left: `${(i / (dividerCount(mod) + 1)) * 100}%` }"
+                              class="absolute top-0 bottom-0"
+                              :class="boardClass(mod)"
+                              :style="{
+                                width: boardThicknessPx(),
+                                left: `calc(${(i / (dividerCount(mod) + 1)) * 100}% - ${boardThicknessPx()} / 2)`,
+                              }"
                               aria-hidden="true"
                             />
                           </template>
