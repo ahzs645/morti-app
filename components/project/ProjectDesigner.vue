@@ -18,6 +18,7 @@ import {
   type PanelEdge,
 } from '~~/shared/domain/edgeband'
 import { DRILL_OPERATION_TYPES, type DrillingRule } from '~~/shared/domain/drilling'
+import { JOINT_STYLES } from '~~/shared/domain/joinery'
 import { PATTERN_ANCHORS, PATTERN_KINDS } from '~~/shared/domain/operations'
 import { HARDWARE_CATALOG } from '~~/shared/domain/hardware-catalog'
 import {
@@ -47,6 +48,8 @@ import {
   addDrillingRule,
   removeDrillingRule,
   updateDrillingRule,
+  setJoineryValue,
+  setFrameMemberCount,
   resetSettings,
   resetPanelAttributes,
   resetDrilling,
@@ -519,6 +522,64 @@ function setGrain(role: PanelRole, grain: GrainDirection) {
 function setBand(role: PanelRole, edge: PanelEdge, bandId: string) {
   const bands = { ...panelAttributesFor(role).bands, [edge]: bandId === BARE_EDGE_VALUE ? null : bandId }
   setPanelAttributes(props.ydoc, role, { bands })
+}
+
+// --- Face frame (panel2frame) ---
+function sharedFrameValue(key: 'frameRailCount' | 'frameStileCount'): string {
+  const values = selectedModuleInfos.value
+    .filter(info => info.module.type === 'frame')
+    .map(info => info.module[key] ?? 0)
+  if (values.length === 0) return ''
+  return values.every(value => value === values[0]) ? String(values[0]) : ''
+}
+
+const selectedFrameRailValue = computed(() => sharedFrameValue('frameRailCount'))
+const selectedFrameStileValue = computed(() => sharedFrameValue('frameStileCount'))
+
+function onSelectedFrameMemberCommit(key: 'frameRailCount' | 'frameStileCount', event: Event) {
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (Number.isFinite(parsed)) {
+    for (const info of selectedModuleInfos.value) {
+      if (info.module.type !== 'frame') continue
+      setFrameMemberCount(props.ydoc, info.columnIndex, info.moduleIndex, key, parsed)
+    }
+  }
+  input.value = sharedFrameValue(key)
+}
+
+// ---------------------------------------------------------------------------
+// Joinery (magicJoints and the joint-cutting tools)
+// ---------------------------------------------------------------------------
+
+const joinery = computed(() => snapshot.value.joinery)
+const jointStyles = JOINT_STYLES
+
+const joineryStyleHint = computed(() =>
+  JOINT_STYLES.find(style => style.value === joinery.value.style)?.hint ?? '',
+)
+
+interface JoineryField {
+  key: 'fastenersPerJoint' | 'fastenerDiameter' | 'fastenerDepth' | 'endInset'
+  label: string
+  unit: 'mm' | 'per joint'
+}
+
+const joineryNumberFields: JoineryField[] = [
+  { key: 'fastenersPerJoint', label: 'Fasteners per joint', unit: 'per joint' },
+  { key: 'fastenerDiameter', label: 'Fastener diameter', unit: 'mm' },
+  { key: 'fastenerDepth', label: 'Fastener depth', unit: 'mm' },
+  { key: 'endInset', label: 'End inset', unit: 'mm' },
+]
+
+function commitJoineryField(field: JoineryField, event: Event) {
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    setJoineryValue(props.ydoc, field.key, field.unit === 'mm' ? parsed / 1000 : Math.round(parsed))
+  }
+  const current = joinery.value[field.key]
+  input.value = field.unit === 'mm' ? toMm(current) : String(current)
 }
 
 // ---------------------------------------------------------------------------
@@ -1076,6 +1137,33 @@ if (getCurrentScope()) {
                     </dd>
                   </template>
 
+                  <template v-if="selectedTypeValue === 'frame'">
+                    <label class="contents">
+                      <span class="self-center text-[0.7rem] text-muted">Rails</span>
+                      <input
+                        :value="selectedFrameRailValue"
+                        type="text"
+                        inputmode="numeric"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                        aria-label="Extra horizontal rails inside the frame"
+                        @keydown.enter.prevent="onSelectedFrameMemberCommit('frameRailCount', $event)"
+                        @blur="onSelectedFrameMemberCommit('frameRailCount', $event)"
+                      >
+                    </label>
+                    <label class="contents">
+                      <span class="self-center text-[0.7rem] text-muted">Stiles</span>
+                      <input
+                        :value="selectedFrameStileValue"
+                        type="text"
+                        inputmode="numeric"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                        aria-label="Extra vertical stiles inside the frame"
+                        @keydown.enter.prevent="onSelectedFrameMemberCommit('frameStileCount', $event)"
+                        @blur="onSelectedFrameMemberCommit('frameStileCount', $event)"
+                      >
+                    </label>
+                  </template>
+
                   <template v-if="selectedTypeValue === 'dividers'">
                     <dt class="self-center text-muted">
                       Dividers
@@ -1316,6 +1404,67 @@ if (getCurrentScope()) {
                           @update:model-value="updateSetting(field.key, $event)"
                         />
                       </dd>
+                    </template>
+
+                    <dt class="col-span-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                      Joinery
+                    </dt>
+
+                    <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
+                      <span class="truncate">Joint style</span>
+                      <UTooltip
+                        :text="joineryStyleHint"
+                        :delay-duration="100"
+                        :content="{ side: 'left', sideOffset: 6 }"
+                      >
+                        <button
+                          type="button"
+                          class="config-help-icon active:scale-[0.97] transition-transform duration-150"
+                          aria-label="Joint style help"
+                        >
+                          <UIcon
+                            name="i-lucide-circle-help"
+                            class="size-3.5"
+                          />
+                        </button>
+                      </UTooltip>
+                    </dt>
+                    <dd>
+                      <USelect
+                        :model-value="joinery.style"
+                        :items="jointStyles"
+                        value-key="value"
+                        label-key="label"
+                        size="xs"
+                        class="w-52"
+                        aria-label="Joint style applied at every panel contact"
+                        @update:model-value="setJoineryValue(props.ydoc, 'style', $event as never)"
+                      />
+                    </dd>
+
+                    <template v-if="joinery.style !== 'butt'">
+                      <template
+                        v-for="field in joineryNumberFields"
+                        :key="field.key"
+                      >
+                        <dt class="flex min-w-0 items-center self-center text-muted">
+                          <span class="truncate">{{ field.label }}</span>
+                        </dt>
+                        <dd>
+                          <div class="flex items-center gap-1">
+                            <input
+                              :value="field.unit === 'mm' ? toMm(joinery[field.key]) : joinery[field.key]"
+                              type="text"
+                              inputmode="decimal"
+                              class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                              :aria-label="`${field.label} (${field.unit})`"
+                              @keydown.enter.prevent="commitJoineryField(field, $event)"
+                              @blur="commitJoineryField(field, $event)"
+                            >
+                            <span class="text-muted lowercase">{{ field.unit }}</span>
+                          </div>
+                        </dd>
+                      </template>
                     </template>
 
                     <dt class="col-span-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-dimmed">

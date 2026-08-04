@@ -63,6 +63,10 @@ export const ALL_PANEL_ROLES: PanelRole[] = [
   'drawer-side',
   'drawer-back',
   'drawer-bottom',
+  'frame-rail',
+  'frame-stile',
+  'corner-block',
+  'corner-brace',
 ]
 
 export const PANEL_ROLE_LABEL: Record<PanelRole, string> = {
@@ -76,6 +80,10 @@ export const PANEL_ROLE_LABEL: Record<PanelRole, string> = {
   'drawer-side': 'Drawer side',
   'drawer-back': 'Drawer back',
   'drawer-bottom': 'Drawer bottom',
+  'frame-rail': 'Frame rail',
+  'frame-stile': 'Frame stile',
+  'corner-block': 'Corner block',
+  'corner-brace': 'Corner brace',
 }
 
 export function defaultPanelAttributes(): PanelAttributes {

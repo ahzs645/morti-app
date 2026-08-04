@@ -15,6 +15,10 @@ import {
   DEFAULT_DIVIDER_COUNT,
   DIVIDER_COUNT_MAX,
   DIVIDER_COUNT_MIN,
+  DEFAULT_FRAME_RAIL_COUNT,
+  DEFAULT_FRAME_STILE_COUNT,
+  FRAME_MEMBER_COUNT_MAX,
+  FRAME_MEMBER_COUNT_MIN,
   FURNITURE_CONFIG_WRITABLE_KEYS,
   DEFAULT_PROJECT_SETTINGS,
   sanitizeProjectSettings,
@@ -35,6 +39,11 @@ import {
   defaultDrillingRule,
   sanitizeDrillingMap,
 } from '~~/shared/domain/drilling'
+import {
+  DEFAULT_JOINERY_SETTINGS,
+  JOINT_STYLES,
+  type JoinerySettings,
+} from '~~/shared/domain/joinery'
 import {
   DESIGN_SCHEMA_VERSION,
   PROJECT_SETTINGS_KEYS,
@@ -142,6 +151,43 @@ function writeDrillingRules(target: Y.Map<unknown>, role: string, rules: Drillin
   if (rules.length > 0) array.insert(0, rules.map(rule => JSON.parse(JSON.stringify(rule)) as unknown))
 }
 
+const JOINERY_KEYS: (keyof JoinerySettings)[] = [
+  'style',
+  'fastenersPerJoint',
+  'fastenerDiameter',
+  'fastenerDepth',
+  'endInset',
+]
+
+const JOINT_STYLE_VALUES = JOINT_STYLES.map(s => s.value)
+
+function sanitizeJoinery(input: Partial<JoinerySettings> | null | undefined): JoinerySettings {
+  const source = input ?? {}
+  const positive = (value: unknown, fallback: number) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? Math.min(1, Math.round(value * 1_000_000) / 1_000_000)
+      : fallback
+  return {
+    style: typeof source.style === 'string' && JOINT_STYLE_VALUES.includes(source.style as never)
+      ? source.style
+      : DEFAULT_JOINERY_SETTINGS.style,
+    fastenersPerJoint: typeof source.fastenersPerJoint === 'number' && Number.isFinite(source.fastenersPerJoint)
+      ? Math.max(1, Math.min(16, Math.round(source.fastenersPerJoint)))
+      : DEFAULT_JOINERY_SETTINGS.fastenersPerJoint,
+    fastenerDiameter: positive(source.fastenerDiameter, DEFAULT_JOINERY_SETTINGS.fastenerDiameter),
+    fastenerDepth: positive(source.fastenerDepth, DEFAULT_JOINERY_SETTINGS.fastenerDepth),
+    endInset: positive(source.endInset, DEFAULT_JOINERY_SETTINGS.endInset),
+  }
+}
+
+function readJoinery(map: Y.Map<unknown>): JoinerySettings {
+  const joinery = map.get('joinery') as Y.Map<unknown> | undefined
+  if (!joinery) return { ...DEFAULT_JOINERY_SETTINGS }
+  const raw: Record<string, unknown> = {}
+  for (const key of JOINERY_KEYS) raw[key] = joinery.get(key)
+  return sanitizeJoinery(raw as Partial<JoinerySettings>)
+}
+
 /** Read the `settings` branch as a POJO, filling any gap with the default. */
 function readSettingsMap(map: Y.Map<unknown>): ProjectSettings {
   const settings = map.get('settings') as Y.Map<unknown> | undefined
@@ -215,6 +261,20 @@ export function ensureInitialized(doc: Y.Doc) {
       const clean = readDrillingMap(map)
       for (const role of ALL_PANEL_ROLES) writeDrillingRules(drilling, role, clean[role])
     }
+    // Joinery defaults to `butt`, which emits nothing — so an old doc compiles
+    // to exactly the panels it did before.
+    if (!map.has('joinery')) {
+      const joinery = new Y.Map<unknown>()
+      for (const key of JOINERY_KEYS) joinery.set(key, DEFAULT_JOINERY_SETTINGS[key])
+      map.set('joinery', joinery)
+    }
+    else {
+      const joinery = map.get('joinery') as Y.Map<unknown>
+      const clean = readJoinery(map)
+      for (const key of JOINERY_KEYS) {
+        if (joinery.get(key) !== clean[key]) joinery.set(key, clean[key])
+      }
+    }
     runPendingMigrations(doc)
     if (!map.has('columns')) {
       const cols = new Y.Array<Y.Map<unknown>>()
@@ -238,7 +298,7 @@ export function ensureInitialized(doc: Y.Doc) {
         }
         const rawType = module.get('type')
         const type = rawType === 'drawers' ? 'drawer' : rawType
-        if (type !== 'shelf' && type !== 'shelves' && type !== 'dividers' && type !== 'drawer' && type !== 'doors' && type !== 'left-door' && type !== 'right-door') {
+        if (type !== 'shelf' && type !== 'shelves' && type !== 'dividers' && type !== 'frame' && type !== 'drawer' && type !== 'doors' && type !== 'left-door' && type !== 'right-door') {
           module.set('type', 'shelf')
         }
         else if (type !== rawType) {
@@ -284,6 +344,18 @@ export function ensureInitialized(doc: Y.Doc) {
         else if (module.has('dividerCount')) {
           module.delete('dividerCount')
         }
+        if (module.get('type') === 'frame') {
+          for (const [key, fallback] of [['frameRailCount', DEFAULT_FRAME_RAIL_COUNT], ['frameStileCount', DEFAULT_FRAME_STILE_COUNT]] as const) {
+            const value = module.get(key)
+            module.set(key, typeof value === 'number' && Number.isFinite(value)
+              ? Math.max(FRAME_MEMBER_COUNT_MIN, Math.min(FRAME_MEMBER_COUNT_MAX, Math.round(value)))
+              : fallback)
+          }
+        }
+        else {
+          if (module.has('frameRailCount')) module.delete('frameRailCount')
+          if (module.has('frameStileCount')) module.delete('frameStileCount')
+        }
       })
     })
   }, 'init')
@@ -322,7 +394,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     ms?.forEach((mm) => {
       const id = (mm.get('id') as string) ?? cryptoRandomId()
       const rawType = mm.get('type')
-      const type: ModuleType = rawType === 'drawer' || rawType === 'doors' || rawType === 'left-door' || rawType === 'right-door' || rawType === 'shelf' || rawType === 'shelves' || rawType === 'dividers' ? rawType : 'shelf'
+      const type: ModuleType = rawType === 'drawer' || rawType === 'doors' || rawType === 'left-door' || rawType === 'right-door' || rawType === 'shelf' || rawType === 'shelves' || rawType === 'dividers' || rawType === 'frame' ? rawType : 'shelf'
       const rawHeight = mm.get('height')
       const height = typeof rawHeight === 'number' && Number.isFinite(rawHeight) && rawHeight > 0 ? snapMetric(rawHeight) : DEFAULT_SHELF_HEIGHT
       const drawerCount = mm.get('drawerCount') as number | undefined
@@ -338,6 +410,16 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
       if (type === 'dividers' && typeof dividerCount === 'number' && Number.isFinite(dividerCount)) {
         m.dividerCount = Math.max(DIVIDER_COUNT_MIN, Math.min(DIVIDER_COUNT_MAX, Math.round(dividerCount)))
       }
+      if (type === 'frame') {
+        const railCount = mm.get('frameRailCount')
+        const stileCount = mm.get('frameStileCount')
+        m.frameRailCount = typeof railCount === 'number' && Number.isFinite(railCount)
+          ? Math.max(FRAME_MEMBER_COUNT_MIN, Math.min(FRAME_MEMBER_COUNT_MAX, Math.round(railCount)))
+          : DEFAULT_FRAME_RAIL_COUNT
+        m.frameStileCount = typeof stileCount === 'number' && Number.isFinite(stileCount)
+          ? Math.max(FRAME_MEMBER_COUNT_MIN, Math.min(FRAME_MEMBER_COUNT_MAX, Math.round(stileCount)))
+          : DEFAULT_FRAME_STILE_COUNT
+      }
       modules.push(m)
     })
     columns.push({ width, modules })
@@ -349,6 +431,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     settings: readSettingsMap(map),
     panelAttributes: readPanelAttributesMap(map),
     drilling: readDrillingMap(map),
+    joinery: readJoinery(map),
     columns,
   }
 }
@@ -362,6 +445,8 @@ export function toYModule(m: FurnitureModule): Y.Map<unknown> {
   if (typeof m.drawerCount === 'number') y.set('drawerCount', m.drawerCount)
   if (typeof m.shelfCount === 'number') y.set('shelfCount', m.shelfCount)
   if (typeof m.dividerCount === 'number') y.set('dividerCount', m.dividerCount)
+  if (typeof m.frameRailCount === 'number') y.set('frameRailCount', m.frameRailCount)
+  if (typeof m.frameStileCount === 'number') y.set('frameStileCount', m.frameStileCount)
   return y
 }
 
@@ -406,6 +491,10 @@ export function insertModule(doc: Y.Doc, columnIndex: number, atIndex: number, t
     if (type === 'drawer') m.drawerCount = DEFAULT_DRAWER_COUNT
     if (type === 'shelves') m.shelfCount = DEFAULT_SHELF_COUNT
     if (type === 'dividers') m.dividerCount = DEFAULT_DIVIDER_COUNT
+    if (type === 'frame') {
+      m.frameRailCount = DEFAULT_FRAME_RAIL_COUNT
+      m.frameStileCount = DEFAULT_FRAME_STILE_COUNT
+    }
     ms.insert(atIndex, [toYModule(m)])
   }, 'insertModule')
 }
@@ -429,6 +518,14 @@ export function setModuleType(doc: Y.Doc, columnIndex: number, moduleIndex: numb
     if (type !== 'shelves' && m.has('shelfCount')) m.delete('shelfCount')
     if (type === 'dividers' && !m.has('dividerCount')) m.set('dividerCount', DEFAULT_DIVIDER_COUNT)
     if (type !== 'dividers' && m.has('dividerCount')) m.delete('dividerCount')
+    if (type === 'frame') {
+      if (!m.has('frameRailCount')) m.set('frameRailCount', DEFAULT_FRAME_RAIL_COUNT)
+      if (!m.has('frameStileCount')) m.set('frameStileCount', DEFAULT_FRAME_STILE_COUNT)
+    }
+    else {
+      if (m.has('frameRailCount')) m.delete('frameRailCount')
+      if (m.has('frameStileCount')) m.delete('frameStileCount')
+    }
   }, 'setModuleType')
 }
 
@@ -464,6 +561,15 @@ export function setDividerCount(doc: Y.Doc, columnIndex: number, moduleIndex: nu
     if (!m) return
     m.set('dividerCount', Math.max(DIVIDER_COUNT_MIN, Math.min(DIVIDER_COUNT_MAX, Math.round(dividerCount))))
   }, 'setDividerCount')
+}
+
+export function setFrameMemberCount(doc: Y.Doc, columnIndex: number, moduleIndex: number, key: 'frameRailCount' | 'frameStileCount', value: number) {
+  doc.transact(() => {
+    const ms = (getFurnitureMap(doc).get('columns') as Y.Array<Y.Map<unknown>>).get(columnIndex)?.get('modules') as Y.Array<Y.Map<unknown>>
+    const m = ms?.get(moduleIndex)
+    if (!m) return
+    m.set(key, Math.max(FRAME_MEMBER_COUNT_MIN, Math.min(FRAME_MEMBER_COUNT_MAX, Math.round(value))))
+  }, 'setFrameMemberCount')
 }
 
 export function setConfigValue<K extends keyof FurnitureConfig>(doc: Y.Doc, key: K, value: FurnitureConfig[K]) {
@@ -539,6 +645,20 @@ export function updateDrillingRule(doc: Y.Doc, role: string, ruleId: string, pat
     )
     writeDrillingRules(drilling, role, sanitizeDrillingMap({ [role]: next })[role as keyof DrillingMap])
   }, 'updateDrillingRule')
+}
+
+export function setJoineryValue<K extends keyof JoinerySettings>(doc: Y.Doc, key: K, value: JoinerySettings[K]) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let joinery = map.get('joinery') as Y.Map<unknown> | undefined
+    if (!joinery) {
+      joinery = new Y.Map<unknown>()
+      for (const k of JOINERY_KEYS) joinery.set(k, DEFAULT_JOINERY_SETTINGS[k])
+      map.set('joinery', joinery)
+    }
+    const clean = sanitizeJoinery({ ...readJoinery(map), [key]: value })
+    joinery.set(key as string, clean[key])
+  }, 'setJoineryValue')
 }
 
 export function resetDrilling(doc: Y.Doc) {

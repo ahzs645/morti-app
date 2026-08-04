@@ -74,6 +74,8 @@ export function cabinetPartForRole(role: PanelRole): CabinetPart {
   if (role === 'vertical-side' || role === 'vertical-divider') return 'sides'
   if (role === 'horizontal-deck' || role === 'internal-shelf') return 'deck'
   if (role === 'door-front' || role === 'drawer-front') return 'fronts'
+  // A face frame reads as part of the front of the piece.
+  if (role === 'frame-rail' || role === 'frame-stile') return 'fronts'
   return 'carcass'
 }
 

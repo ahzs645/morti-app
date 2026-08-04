@@ -1,8 +1,9 @@
 import type { DrillingMap } from './drilling'
+import type { JoinerySettings } from './joinery'
 import type { PanelAttributeMap } from './panel-attributes'
 import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
 
-export type ModuleType = 'shelf' | 'shelves' | 'dividers' | 'drawer' | 'doors' | 'left-door' | 'right-door'
+export type ModuleType = 'shelf' | 'shelves' | 'dividers' | 'drawer' | 'doors' | 'left-door' | 'right-door' | 'frame'
 
 export interface FurnitureModule {
   id: string
@@ -11,6 +12,8 @@ export interface FurnitureModule {
   drawerCount?: number // 1..32, drawer only
   shelfCount?: number // 1..16, internal shelf boards, 'shelves' only
   dividerCount?: number // 1..16, vertical divider boards, 'dividers' only
+  frameRailCount?: number // 0..8, intermediate horizontal rails, 'frame' only
+  frameStileCount?: number // 0..8, intermediate vertical stiles, 'frame' only
 }
 
 export interface FurnitureColumn {
@@ -97,6 +100,8 @@ export interface FurnitureDoc {
   panelAttributes: PanelAttributeMap
   /** Drilling rules re-applied on every compile, keyed by `PanelRole`. */
   drilling: DrillingMap
+  /** Joint style derived at every panel contact on each compile. */
+  joinery: JoinerySettings
   columns: FurnitureColumn[]
 }
 
@@ -214,6 +219,14 @@ export type PanelRole =
   | 'drawer-side'
   | 'drawer-back'
   | 'drawer-bottom'
+  /** Horizontal member of a face frame (panel2frame). */
+  | 'frame-rail'
+  /** Vertical member of a face frame (panel2frame). */
+  | 'frame-stile'
+  /** Square block glued into a carcass corner (cornerBlock). */
+  | 'corner-block'
+  /** Diagonal brace across a carcass corner (cornerBrace). */
+  | 'corner-brace'
 
 /**
  * Machining operations subtracted from a panel.
@@ -363,6 +376,10 @@ export const PANEL_ROLE_SHORT_CODE: Record<PanelRole, string> = {
   'drawer-side': 'DRS',
   'drawer-back': 'DRB',
   'drawer-bottom': 'DBM',
+  'frame-rail': 'FR',
+  'frame-stile': 'FS',
+  'corner-block': 'CBK',
+  'corner-brace': 'CBR',
 }
 
 export const DESIGN_SCHEMA_VERSION = 3

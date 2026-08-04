@@ -16,7 +16,7 @@ import {
 } from '~~/shared/three/outline'
 import { makePanelMaterial, type PanelMaterialMode, type PanelMaterialSpec } from '~~/shared/three/materials'
 import { DEFAULT_CAMERA_STATE, hexColorToNumber, normalizePublicStyle } from '~~/shared/domain/defaults'
-import { resolveMaterial, type CabinetPart } from '~~/shared/domain/materials'
+import { cabinetPartForRole, resolveMaterial, type CabinetPart } from '~~/shared/domain/materials'
 import {
   attributesForRole,
   defaultPanelAttributeMap,
@@ -559,10 +559,8 @@ const gridColor = computed(() => {
 })
 
 function partForPanel(panel: CompiledPanel): CabinetPart {
-  if (panel.role === 'vertical-side' || panel.role === 'vertical-divider') return 'sides'
-  if (panel.role === 'horizontal-deck' || panel.role === 'internal-shelf') return 'deck'
-  if (panel.role === 'door-front' || panel.role === 'drawer-front') return 'fronts'
-  return 'carcass'
+  // Single source of truth, shared with the costing rollup.
+  return cabinetPartForRole(panel.role)
 }
 
 function legacyHexForPart(part: CabinetPart): string {

@@ -117,7 +117,7 @@ export function sanitizeProjectSettings(input: Partial<ProjectSettings> | null |
   }
 }
 
-export const MODULE_TYPES: ModuleType[] = ['shelf', 'shelves', 'dividers', 'drawer', 'doors', 'left-door', 'right-door']
+export const MODULE_TYPES: ModuleType[] = ['shelf', 'shelves', 'dividers', 'frame', 'drawer', 'doors', 'left-door', 'right-door']
 
 export const DEFAULT_COLUMN_WIDTH = 0.45
 export const DEFAULT_SHELF_HEIGHT = 0.3
@@ -130,6 +130,13 @@ export const SHELF_COUNT_MAX = 16
 export const DEFAULT_DIVIDER_COUNT = 1
 export const DIVIDER_COUNT_MIN = 1
 export const DIVIDER_COUNT_MAX = 16
+// A face frame always has its four outer members; these count the ones added
+// inside it, so zero is a valid (and common) answer.
+export const DEFAULT_FRAME_RAIL_COUNT = 0
+export const DEFAULT_FRAME_STILE_COUNT = 0
+export const FRAME_MEMBER_COUNT_MIN = 0
+export const FRAME_MEMBER_COUNT_MAX = 8
+export const FRAME_MEMBER_WIDTH = 0.05
 
 export function snapConfig(c: Partial<FurnitureConfig>): FurnitureConfig {
   const r = { ...DEFAULT_FURNITURE_CONFIG, ...c }
@@ -145,6 +152,10 @@ export function defaultModule(type: ModuleType): FurnitureModule {
   if (type === 'drawer') m.drawerCount = DEFAULT_DRAWER_COUNT
   if (type === 'shelves') m.shelfCount = DEFAULT_SHELF_COUNT
   if (type === 'dividers') m.dividerCount = DEFAULT_DIVIDER_COUNT
+  if (type === 'frame') {
+    m.frameRailCount = DEFAULT_FRAME_RAIL_COUNT
+    m.frameStileCount = DEFAULT_FRAME_STILE_COUNT
+  }
   return m
 }
 

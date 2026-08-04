@@ -7,6 +7,7 @@ import {
   snapConfig,
 } from './defaults'
 import { defaultDrillingMap } from './drilling'
+import { DEFAULT_JOINERY_SETTINGS } from './joinery'
 import { defaultPanelAttributeMap } from './panel-attributes'
 import {
   DESIGN_SCHEMA_VERSION,
@@ -127,6 +128,7 @@ function cloneDraft(draft: AiFurnitureDraft): AiFurnitureDraft {
       settings: { ...draft.doc.settings },
       panelAttributes: draft.doc.panelAttributes,
       drilling: draft.doc.drilling,
+      joinery: { ...draft.doc.joinery },
       columns: draft.doc.columns.map(column => ({
         width: column.width,
         modules: column.modules.map(module => ({ ...module })),
@@ -358,6 +360,7 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
     settings: { ...DEFAULT_PROJECT_SETTINGS },
     panelAttributes: defaultPanelAttributeMap(),
     drilling: defaultDrillingMap(),
+    joinery: { ...DEFAULT_JOINERY_SETTINGS },
     config,
     columns,
   }
@@ -380,6 +383,7 @@ function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, curren
       settings: { ...DEFAULT_PROJECT_SETTINGS },
       panelAttributes: defaultPanelAttributeMap(),
       drilling: defaultDrillingMap(),
+      joinery: { ...DEFAULT_JOINERY_SETTINGS },
       config,
       columns,
     },
@@ -407,6 +411,7 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
       settings: { ...DEFAULT_PROJECT_SETTINGS },
       panelAttributes: defaultPanelAttributeMap(),
       drilling: defaultDrillingMap(),
+      joinery: { ...DEFAULT_JOINERY_SETTINGS },
       config,
       columns,
     },

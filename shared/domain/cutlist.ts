@@ -11,6 +11,10 @@ const roleCodes: Record<string, string> = {
   'drawer-side': 'D',
   'drawer-back': 'D',
   'drawer-bottom': 'D',
+  'frame-rail': 'F',
+  'frame-stile': 'F',
+  'corner-block': 'C',
+  'corner-brace': 'C',
 }
 
 export function panelCutlistOrientation(panel: CompiledPanel): string {

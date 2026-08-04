@@ -12,7 +12,9 @@ import type {
   PanelRole,
 } from '~~/shared/domain/types'
 import { effectiveDepth, isHoleOperation } from '~~/shared/domain/operations'
+import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
 import { drillingOperationsForPanel } from '~~/shared/domain/drilling'
+import { applyJoinery } from '~~/shared/domain/joinery'
 
 // ---------------------------------------------------------------------------
 // Tunables (mirrors Dt_x5Iy5.js module-level constants)
@@ -684,10 +686,76 @@ function compileDividers(module: FurnitureModule, cell: CompiledCellBounds, conf
   return { panels, operations: [] as PanelOperation[] }
 }
 
+/**
+ * Face frame across the module opening — the parametric form of `panel2frame`.
+ *
+ * The four outer members always exist; `frameRailCount` and `frameStileCount`
+ * add evenly spaced members inside them, so a plain surround is the zero case.
+ * Members sit at the cell's front face, ahead of the carcass.
+ */
+function compileFrame(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
+  const panels: CompiledPanel[] = []
+  const memberWidth = Math.min(FRAME_MEMBER_WIDTH, Math.max(DEGENERATE_MIN_SIZE, Math.min(cell.width, cell.height) / 3))
+  const thickness = config.panelThickness
+  const z = cell.frontZ - thickness / 2
+  const width = Math.max(DEGENERATE_MIN_SIZE, cell.frontWidth)
+  const height = Math.max(DEGENERATE_MIN_SIZE, cell.frontHeight)
+  const centerX = (cell.xMin + cell.xMax) / 2
+  const centerY = (cell.yMin + cell.yMax) / 2
+  const topY = centerY + height / 2 - memberWidth / 2
+  const bottomY = centerY - height / 2 + memberWidth / 2
+  const leftX = centerX - width / 2 + memberWidth / 2
+  const rightX = centerX + width / 2 - memberWidth / 2
+
+  const rail = (key: string, y: number, railWidth: number) => makePanel({
+    key,
+    role: 'frame-rail',
+    sourceModuleId: module.id,
+    position: { x: centerX, y, z },
+    size: { width: railWidth, height: memberWidth, thickness },
+    orientation: 'vertical-xy',
+  })
+
+  const stile = (key: string, x: number) => makePanel({
+    key,
+    role: 'frame-stile',
+    sourceModuleId: module.id,
+    position: { x, y: centerY, z },
+    size: { width: memberWidth, height, thickness },
+    orientation: 'vertical-xy',
+  })
+
+  // Stiles run the full height; rails span between them.
+  panels.push(stile(`frame-stile:${module.id}:left`, leftX))
+  panels.push(stile(`frame-stile:${module.id}:right`, rightX))
+  const railSpan = Math.max(DEGENERATE_MIN_SIZE, width - 2 * memberWidth)
+  panels.push(rail(`frame-rail:${module.id}:top`, topY, railSpan))
+  panels.push(rail(`frame-rail:${module.id}:bottom`, bottomY, railSpan))
+
+  const extraRails = Math.max(0, Math.min(8, Math.floor(module.frameRailCount ?? 0)))
+  const innerHeight = bottomY + memberWidth / 2
+  const innerTop = topY - memberWidth / 2
+  for (let index = 0; index < extraRails; index++) {
+    const t = (index + 1) / (extraRails + 1)
+    panels.push(rail(`frame-rail:${module.id}:${index}`, innerHeight + (innerTop - innerHeight) * t, railSpan))
+  }
+
+  const extraStiles = Math.max(0, Math.min(8, Math.floor(module.frameStileCount ?? 0)))
+  const innerLeft = leftX + memberWidth / 2
+  const innerRight = rightX - memberWidth / 2
+  for (let index = 0; index < extraStiles; index++) {
+    const t = (index + 1) / (extraStiles + 1)
+    panels.push(stile(`frame-stile:${module.id}:${index}`, innerLeft + (innerRight - innerLeft) * t))
+  }
+
+  return { panels, operations: [] as PanelOperation[] }
+}
+
 function compileModule(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
   if (module.type === 'shelf') return { panels: [] as CompiledPanel[], operations: [] as PanelOperation[] }
   if (module.type === 'shelves') return compileShelves(module, cell, config)
   if (module.type === 'dividers') return compileDividers(module, cell, config)
+  if (module.type === 'frame') return compileFrame(module, cell, config)
   if (module.type === 'drawer') return compileDrawer(module, cell, config)
   return compileDoorOrFrontPanels(module, cell, config)
 }
@@ -817,6 +885,12 @@ export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOption
     for (const panel of normalizedPanels) {
       operations.push(...drillingOperationsForPanel(panel.key, panel.role, panel, furnitureDoc.drilling))
     }
+  }
+
+  // Joinery reads the finished panel boxes, so it sees every panel the
+  // compiler produced — carcass, module, and (later) free-standing alike.
+  if (furnitureDoc.joinery) {
+    operations.push(...applyJoinery(normalizedPanels, furnitureDoc.joinery).operations)
   }
 
   const normalizedOperations = operations.map(normalizeOperation)
