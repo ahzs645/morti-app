@@ -107,6 +107,25 @@ const CASES = [
     },
   },
   {
+    id: 'stacked-modules',
+    title: 'One module vs two of the same total height',
+    expect: 'Both columns exactly the same height. Splitting a bay in two must not make the piece taller.',
+    design: {
+      columns: [
+        { width: BAY.width, modules: [{ type: 'drawer', height: 1.2, drawerCount: 2 }] },
+        { width: BAY.width, modules: [{ type: 'left-door', height: 0.6 }, { type: 'right-door', height: 0.6 }] },
+        {
+          width: BAY.width,
+          modules: [
+            { type: 'shelves', height: 0.4, shelfCount: 1 },
+            { type: 'shelves', height: 0.4, shelfCount: 1 },
+            { type: 'shelves', height: 0.4, shelfCount: 1 },
+          ],
+        },
+      ],
+    },
+  },
+  {
     id: 'outline-arch',
     title: 'Arch-top door outline',
     expect: 'Both leaves arch over at the top. The flat view clips the front to the same profile the 3D extrudes.',

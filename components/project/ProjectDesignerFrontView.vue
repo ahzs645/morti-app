@@ -469,13 +469,32 @@ function columnTotalHeight(col: FurnitureColumn): number {
   return col.modules.reduce((sum, mod) => sum + mod.height, 0)
 }
 
+/**
+ * The module stack is exactly as tall as the modules in it. Boundary handles
+ * are drawn over the boundaries rather than laid out between them: when they
+ * took layout space, a column split into two modules came out taller than a
+ * column holding one module of the same height, and the drawing said the two
+ * pieces were different sizes when the 3D said they were not.
+ */
+function columnStackHeight(col: FurnitureColumn): number {
+  if (col.modules.length === 0) return 0
+  return We + col.modules.reduce((sum, mod) => sum + meterToPx(mod.height), 0)
+}
+
 function columnRenderedHeight(col: FurnitureColumn): number {
-  const moduleCount = col.modules.length
-  const moduleHeight = meterToPx(columnTotalHeight(col))
-  const spacerHeight = moduleCount > 0 ? We + moduleCount * zt : 0
-  const gapHeight = moduleCount > 0 ? moduleCount * 2 * Ke : 0
-  const height = moduleHeight + spacerHeight + gapHeight
+  const height = columnStackHeight(col)
   return height > 0 ? height + qt * 2 : 0
+}
+
+/** Pixels from the stack's bottom edge to the top of module `index`. */
+function boundaryOffsetPx(col: FurnitureColumn, index: number): number {
+  let offset = We
+  for (let i = 0; i <= index; i++) offset += meterToPx(col.modules[i]?.height ?? 0)
+  return offset
+}
+
+function boundaryHandleStyle(col: FurnitureColumn, index: number): Record<string, string> {
+  return { bottom: `${boundaryOffsetPx(col, index) - zt / 2}px`, height: `${zt}px` }
 }
 
 function boundaryHeight(boundaryIndex: number): number {
@@ -502,12 +521,11 @@ function boundaryHeightPx(boundaryIndex: number): string {
 
 /**
  * Where world Y = 0 lands, in pixels above the rail body's bottom edge. The
- * column stack is bottom-aligned but sits on its own padding, the bottom
- * spacer, and the flex gap above it — measure from the rail bottom and a free
- * panel reads a dozen pixels low, close enough to the carcass top to merge
- * with it.
+ * column stack is bottom-aligned but sits on its own padding and the bottom
+ * spacer — measure from the rail bottom and a free panel reads low, close
+ * enough to the carcass top to merge with it.
  */
-const FLOOR_OFFSET_PX = qt + We + Ke
+const FLOOR_OFFSET_PX = qt + We
 
 /** Pixels from the rail body's left edge for a world X, in metres (0 = centre). */
 function pxForWorldX(x: number): number {
@@ -624,8 +642,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                     </button>
 
                     <div
-                      class="flex flex-col-reverse items-stretch"
-                      :style="{ gap: `${Ke}px` }"
+                      class="relative flex flex-col-reverse items-stretch"
                       :aria-label="`Column ${ci + 1}, width ${formatMeasurement(col.width)} meters`"
                     >
                       <span
@@ -757,11 +774,21 @@ function addButtonMarginTop(boundaryIndex: number): string {
                             />
                           </template>
                         </button>
+                      </template>
 
+                      <!-- Drawn over the boundaries, not laid out between them,
+                           so the stack stays exactly as tall as its modules.
+                           The positioning lives on this wrapper because
+                           `.boundary-resize-hit` sets `position: relative`. -->
+                      <div
+                        v-for="(mod, mi) in col.modules"
+                        :key="`${mod.id}-boundary`"
+                        class="absolute inset-x-0 z-10"
+                        :style="boundaryHandleStyle(col, mi)"
+                      >
                         <button
                           type="button"
-                          class="boundary-resize-hit relative block w-full shrink-0 cursor-row-resize"
-                          :style="{ height: `${zt}px` }"
+                          class="boundary-resize-hit block size-full cursor-row-resize"
                           :aria-label="`Resize module boundary ${mi + 1} in column ${ci + 1}`"
                           @pointerdown="onBoundaryPointerDown(ci, mi + 1, $event)"
                         >
@@ -771,7 +798,7 @@ function addButtonMarginTop(boundaryIndex: number): string {
                             :style="spacerStyle('height')"
                           />
                         </button>
-                      </template>
+                      </div>
                     </div>
                   </div>
                 </div>
