@@ -158,9 +158,13 @@ Follow these in order. Each bullet links the change to the file you edit.
    - Add the input row in the inspector `<template>`, gated on
      `selectedTypeValue === '<type>'`.
 
-8. **2D front view (optional polish)** — `components/project/ProjectDesignerFrontView.vue`
+8. **2D front view** — `components/project/ProjectDesignerFrontView.vue`
    - Add a visual branch so the flat designer reflects the part (shelves draw
      evenly-spaced divider lines, like drawer separators).
+   - **Not optional if the component has visible structure.** The flat view is
+     the primary editing surface; a component that renders in 3D but not here
+     reads as broken. The `frame` type shipped without a branch and drew as an
+     empty rectangle while the 3D showed a full face frame.
 
 9. **AI generation (optional)** — `shared/domain/ai-furniture.ts`
    - Add the type to that file's local `MODULE_TYPES`/compact map and normalize the
@@ -264,6 +268,8 @@ Two design decisions run through all of it:
 ## What's next (good follow-on ports)
 
 - **Custom outline editor** — a point editor for `sketch2pad` / `wires2pad`.
+- **Outlines in the flat view** — shaped panels render in 3D and the cutlist,
+  but the front view still draws every module as a rectangle.
 - **Measurement overlay** — dimension annotations on the 3D model
   (`showMeasurements`, `magicMeasure`).
 - **Corner block / brace generators** — the parts and costing already exist.

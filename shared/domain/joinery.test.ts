@@ -7,6 +7,8 @@ import {
   fastenerPositions,
   findPanelContacts,
   isFastenerless,
+  contactToleranceFor,
+  MIN_CONTACT_TOLERANCE,
   panelAabb,
   worldToPanelLocal,
 } from './joinery'
@@ -216,5 +218,39 @@ describe('applyJoinery', () => {
   it('gives every operation a unique id', () => {
     const result = applyJoinery(panels, settings({ style: 'dowel', fastenersPerJoint: 4 }))
     expect(new Set(result.operations.map(o => o.id)).size).toBe(result.operations.length)
+  })
+})
+
+describe('contact tolerance', () => {
+  it('never drops below the floor', () => {
+    expect(contactToleranceFor(0)).toBe(MIN_CONTACT_TOLERANCE)
+    expect(contactToleranceFor(Number.NaN)).toBe(MIN_CONTACT_TOLERANCE)
+  })
+
+  it('scales past the project’s joint clearance', () => {
+    // The compiler insets cells by the clearance, so a tolerance at or below
+    // it would find no contacts in a real assembly at all.
+    expect(contactToleranceFor(0.002)).toBeGreaterThan(0.002)
+  })
+})
+
+describe('joints on a real compiled assembly', () => {
+  it('finds the contacts the carcass actually has, despite joint clearance', () => {
+    // Panels that meet in the finished piece sit `panelJointClearance` apart in
+    // the model, so the tolerance has to account for it.
+    const clearance = 0.002
+    const contacts = findPanelContacts([side, shelf], contactToleranceFor(clearance))
+    expect(contacts.length).toBeGreaterThan(0)
+  })
+
+  it('finds nothing when the tolerance ignores the clearance', () => {
+    // Regression guard: this is the configuration that silently produced no
+    // joinery at all, because the fixed tolerance was below the clearance.
+    const separated = [
+      side,
+      { ...shelf, position: [0, 0.3, 0] as [number, number, number], width: 0.478 },
+    ]
+    expect(findPanelContacts(separated, 0.0005)).toEqual([])
+    expect(findPanelContacts(separated, contactToleranceFor(0.002)).length).toBeGreaterThan(0)
   })
 })

@@ -28,7 +28,7 @@ import {
 } from '~~/shared/domain/router-profiles'
 import { JOINT_STYLES } from '~~/shared/domain/joinery'
 import { OUTLINE_SHAPES, type PanelOutline, defaultOutline } from '~~/shared/domain/outline'
-import { conflictingBindings, variableForField } from '~~/shared/domain/variables'
+import { applyVariables, conflictingBindings, variableForField } from '~~/shared/domain/variables'
 import type { TransportLimits } from '~~/shared/domain/occupied-space'
 import {
   PANEL_PLANES,
@@ -140,7 +140,14 @@ if (getCurrentScope()) {
 
 const columns = computed(() => snapshot.value.columns)
 const config = computed<FurnitureConfig>(() => snapshot.value.config)
-const effectiveConfig = computed(() => config.value)
+// Variables drive config fields at compile time, so the inspector has to
+// resolve them too — otherwise a driven field would show the stored number
+// while the model was built from the variable's.
+const effectiveConfig = computed(() =>
+  snapshot.value.variables.length > 0
+    ? applyVariables(config.value, snapshot.value.variables)
+    : config.value,
+)
 
 const internalSelectedIds = ref<string[]>([])
 const clampedZoomPercent = computed<number>(() => {
@@ -977,6 +984,11 @@ function updateConfigValue(key: string, value: number) {
 function commitConfigField(field: ConfigField, event: Event) {
   const input = event.target as HTMLInputElement | null
   if (!input) return
+  // A driven field is owned by its variable; edit the variable instead.
+  if (aliasFor(field.key)) {
+    input.value = formatConfigValue(field)
+    return
+  }
   const parsed = parseNonNegativeMetric(input.value)
   if (parsed == null) {
     input.value = formatConfigValue(field)
@@ -1195,6 +1207,7 @@ if (getCurrentScope()) {
       :columns="columns"
       :config="config"
       :selected-module-ids="selectedIds"
+      :free-panels="freePanels"
       :zoom-percent="clampedZoomPercent"
       class="relative z-0 min-h-0 w-full flex-1"
       @add-column-left="addColumnLeft"
@@ -1264,6 +1277,7 @@ if (getCurrentScope()) {
                       value-key="value"
                       class="w-full"
                       size="xs"
+                      aria-label="Module type for selected modules"
                       @update:model-value="onSelectedTypeChange"
                     />
                   </dd>
@@ -1491,11 +1505,6 @@ if (getCurrentScope()) {
                     >
                       <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
                         <span class="truncate">{{ field.label }}</span>
-                        <span
-                          v-if="aliasFor(field.key)"
-                          class="shrink-0 rounded bg-primary/15 px-1 text-[10px] text-primary"
-                          :title="`Driven by the variable “${aliasFor(field.key)}”`"
-                        >{{ aliasFor(field.key) }}</span>
                         <UTooltip
                           :text="field.help"
                           :delay-duration="100"
@@ -1794,6 +1803,11 @@ if (getCurrentScope()) {
                     >
                       <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
                         <span class="truncate">{{ field.label }}</span>
+                        <span
+                          v-if="aliasFor(field.key)"
+                          class="shrink-0 truncate rounded bg-primary/15 px-1 text-[10px] text-primary"
+                          :title="`Driven by the variable “${aliasFor(field.key)}”`"
+                        >{{ aliasFor(field.key) }}</span>
                         <UTooltip
                           :text="field.help"
                           :delay-duration="100"
@@ -1813,12 +1827,22 @@ if (getCurrentScope()) {
                       </dt>
                       <dd>
                         <div class="flex items-center gap-1">
+                          <!-- A driven field shows the variable's value, and is
+                               read-only: editing it here would be overwritten
+                               on the next compile. -->
                           <input
                             :value="formatConfigValue(field)"
                             type="text"
                             inputmode="decimal"
-                            class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                            :readonly="aliasFor(field.key) !== null"
+                            :class="[
+                              'w-20 rounded-md px-2 py-1 text-right text-xs tabular-nums shadow-sm outline-none ring-0 transition-colors duration-150',
+                              aliasFor(field.key)
+                                ? 'cursor-not-allowed bg-muted/50 text-muted'
+                                : 'bg-muted text-highlighted focus:bg-elevated',
+                            ]"
                             :aria-label="`${field.label} (${field.unit})`"
+                            :aria-readonly="aliasFor(field.key) !== null"
                             @keydown.enter.prevent="commitConfigField(field, $event)"
                             @blur="commitConfigField(field, $event)"
                           >

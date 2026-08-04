@@ -17,7 +17,7 @@ import { DEFAULT_JOINERY_SETTINGS } from './joinery'
 import { defaultRouterProfileMap } from './router-profiles'
 import { defaultOutlineMap } from './outline'
 import { DEFAULT_TRANSPORT_LIMITS } from './occupied-space'
-import { defaultPanelAttributeMap } from './panel-attributes'
+import { ALL_PANEL_ROLES, defaultPanelAttributeMap } from './panel-attributes'
 import type { FurnitureDoc, ModuleType } from './types'
 import { DESIGN_SCHEMA_VERSION } from './types'
 
@@ -161,8 +161,19 @@ describe('frame component compiler', () => {
     expect(new Set(panels.map(p => p.key)).size).toBe(panels.length)
   })
 
-  it('labels frame parts in the cutlist', () => {
-    expect(panelRoleCode('frame-rail')).toBe('F')
-    expect(panelRoleCode('frame-stile')).toBe('F')
+  it('gives rails and stiles distinct cutlist codes', () => {
+    // They are different parts; sharing a code collided both on F1.
+    expect(panelRoleCode('frame-rail')).toBe('FR')
+    expect(panelRoleCode('frame-stile')).toBe('FS')
+    expect(panelRoleCode('frame-rail')).not.toBe(panelRoleCode('frame-stile'))
+  })
+
+  it('gives every panel role a unique group prefix', () => {
+    // Drawer parts deliberately share 'D' and a counter; nothing else may
+    // collide, or two different parts would carry the same label.
+    const codes = ALL_PANEL_ROLES
+      .filter(role => !role.startsWith('drawer-'))
+      .map(role => panelRoleCode(role))
+    expect(new Set(codes).size).toBe(codes.length)
   })
 })

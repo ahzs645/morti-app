@@ -827,7 +827,7 @@ export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOption
   // structure still has to compile whatever free panels exist.
   if (columns.length === 0 || !(totalWidth > 0)) {
     const only = furnitureDoc.freePanels?.length ? compileFreePanels(furnitureDoc.freePanels) : []
-    const operations = furnitureDoc.joinery ? applyJoinery(only, furnitureDoc.joinery).operations : []
+    const operations = furnitureDoc.joinery ? applyJoinery(only, furnitureDoc.joinery, config.panelJointClearance).operations : []
     const normalized = operations.map(normalizeOperation)
     const byKey = new Map(only.map(panel => [panel.key, panel]))
     for (const operation of normalized) byKey.get(operation.targetPanelKey)?.operations.push(operation)
@@ -928,7 +928,7 @@ export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOption
   // Joinery reads the finished panel boxes, so it sees every panel the
   // compiler produced — carcass, module, and (later) free-standing alike.
   if (furnitureDoc.joinery) {
-    operations.push(...applyJoinery(normalizedPanels, furnitureDoc.joinery).operations)
+    operations.push(...applyJoinery(normalizedPanels, furnitureDoc.joinery, config.panelJointClearance).operations)
   }
 
   const normalizedOperations = operations.map(normalizeOperation)

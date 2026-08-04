@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import type { FurnitureColumn, FurnitureConfig, FurnitureModule } from '~~/shared/domain/types'
+import type { FreePanel } from '~~/shared/domain/free-panels'
+import { FRAME_MEMBER_WIDTH } from '~~/shared/domain/defaults'
 
 interface Props {
   columns: FurnitureColumn[]
   config: FurnitureConfig
   selectedModuleIds: string[]
   zoomPercent: number
+  /** Drawn as an elevation overlay so the flat view matches the 3D. */
+  freePanels?: FreePanel[]
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  freePanels: () => [],
+})
 
 const emit = defineEmits<{
   (e: 'add-column-left'): void
@@ -215,6 +221,47 @@ function dividerCount(mod: FurnitureModule): number {
   return Math.max(1, Math.min(16, Math.round((mod.dividerCount as number) || 1)))
 }
 
+// --- Face frame (mirrors `compileFrame` in shared/domain/assembly.ts) ---
+
+function frameRailCount(mod: FurnitureModule): number {
+  return Math.max(0, Math.min(8, Math.round((mod.frameRailCount as number) || 0)))
+}
+
+function frameStileCount(mod: FurnitureModule): number {
+  return Math.max(0, Math.min(8, Math.round((mod.frameStileCount as number) || 0)))
+}
+
+/** Member width in px, clamped the same way the compiler clamps it. */
+function frameMemberPx(columnWidth: number, mod: FurnitureModule): number {
+  const member = Math.min(FRAME_MEMBER_WIDTH, Math.max(0.001, Math.min(columnWidth, mod.height) / 3))
+  return Math.max(1, Math.round(member * pxPerMeter.value))
+}
+
+/** Outer stiles hug the sides; interior ones space evenly between them. */
+function frameStileStyle(columnWidth: number, mod: FurnitureModule, index: number): Record<string, string> {
+  const member = frameMemberPx(columnWidth, mod)
+  const width = Math.round(columnWidth * pxPerMeter.value)
+  if (index === 0) return { left: '0px', width: `${member}px` }
+  if (index === 1) return { right: '0px', width: `${member}px` }
+  const interior = frameStileCount(mod)
+  const t = (index - 1) / (interior + 1)
+  const centre = member + (width - 2 * member) * t
+  return { left: `${Math.round(centre - member / 2)}px`, width: `${member}px` }
+}
+
+/** Rails span between the outer stiles, so the frame reads as a joined grid. */
+function frameRailStyle(columnWidth: number, mod: FurnitureModule, index: number): Record<string, string> {
+  const member = frameMemberPx(columnWidth, mod)
+  const height = Math.round(mod.height * pxPerMeter.value)
+  const inset = { left: `${member}px`, right: `${member}px` }
+  if (index === 0) return { ...inset, bottom: '0px', height: `${member}px` }
+  if (index === 1) return { ...inset, top: '0px', height: `${member}px` }
+  const interior = frameRailCount(mod)
+  const t = (index - 1) / (interior + 1)
+  const centre = member + (height - 2 * member) * t
+  return { ...inset, bottom: `${Math.round(centre - member / 2)}px`, height: `${member}px` }
+}
+
 function spacerStyle(axis: 'width' | 'height'): Record<string, string> {
   return axis === 'width' ? { width: `${We}px` } : { height: `${We}px` }
 }
@@ -355,6 +402,43 @@ function boundaryHeightPx(boundaryIndex: number): string {
   return `${boundaryHeight(boundaryIndex)}px`
 }
 
+// --- Free panels as an elevation overlay ----------------------------------
+//
+// The rail interleaves a resize divider with every column, so world X cannot
+// be scaled straight to pixels. Walking the same accumulation the flex layout
+// produces keeps the overlay locked to the columns at any zoom.
+
+/** Pixels from the rail body's left edge for a world X, in metres (0 = centre). */
+function pxForWorldX(x: number): number {
+  const half = totalColumnWidthMeters.value / 2
+  let cursorMeters = -half
+  let cursorPx = We + Ke
+  for (const col of props.columns) {
+    const next = cursorMeters + Math.max(0, col.width)
+    if (x <= next) return cursorPx + (x - cursorMeters) * pxPerMeter.value
+    cursorMeters = next
+    cursorPx += Math.round(Math.max(0, col.width) * pxPerMeter.value) + We + Ke
+  }
+  // Past the last column — keep extending at scale so the panel still lands.
+  return cursorPx + (x - cursorMeters) * pxPerMeter.value
+}
+
+/**
+ * A front elevation shows each panel's X and Y extent, whichever axis carries
+ * its thickness — so a side panel correctly reads as a narrow vertical strip.
+ */
+function freePanelStyle(panel: FreePanel): Record<string, string> {
+  const left = pxForWorldX(panel.position.x - panel.size.x / 2)
+  const right = pxForWorldX(panel.position.x + panel.size.x / 2)
+  const bottom = (panel.position.y - panel.size.y / 2) * pxPerMeter.value
+  return {
+    left: `${Math.round(left)}px`,
+    width: `${Math.max(1, Math.round(right - left))}px`,
+    bottom: `${Math.round(bottom)}px`,
+    height: `${Math.max(1, Math.round(panel.size.y * pxPerMeter.value))}px`,
+  }
+}
+
 function addButtonMarginTop(boundaryIndex: number): string {
   const adjacentHeight = boundaryHeight(boundaryIndex)
   const top = railBodyHeight.value - adjacentHeight / 2
@@ -389,9 +473,18 @@ function addButtonMarginTop(boundaryIndex: number): string {
 
           <div class="shrink-0 rounded-lg">
             <div
-              class="flex w-max items-end"
+              class="relative flex w-max items-end"
               :style="{ height: railBodyHeightPx }"
             >
+              <!-- Free panels sit outside the column grid, so they are drawn
+                   as a dashed elevation overlay rather than as modules. -->
+              <div
+                v-for="panel in freePanels"
+                :key="`free-${panel.id}`"
+                class="pointer-events-none absolute z-10 rounded-[2px] border border-dashed border-primary/70 bg-primary/15"
+                :style="freePanelStyle(panel)"
+                :aria-label="`Free panel ${panel.label}`"
+              />
               <div
                 v-if="columns.length > 0"
                 class="column-resize-hit shrink-0 cursor-col-resize touch-none transition-opacity hover:opacity-75"
@@ -516,6 +609,25 @@ function addButtonMarginTop(boundaryIndex: number): string {
                               :key="`${mod.id}-shelf-${i}`"
                               class="absolute left-0 right-0 bg-[var(--ui-bg-muted)]"
                               :style="{ height: '2px', bottom: `${(i / (shelfCount(mod) + 1)) * 100}%` }"
+                              aria-hidden="true"
+                            />
+                          </template>
+
+                          <template v-else-if="mod.type === 'frame'">
+                            <!-- Two outer stiles and two outer rails always,
+                                 plus the interior members, matching the 3D. -->
+                            <div
+                              v-for="i in frameStileCount(mod) + 2"
+                              :key="`${mod.id}-stile-${i}`"
+                              class="absolute top-0 bottom-0 bg-[var(--ui-bg-inverted)] opacity-45"
+                              :style="frameStileStyle(col.width, mod, i - 1)"
+                              aria-hidden="true"
+                            />
+                            <div
+                              v-for="i in frameRailCount(mod) + 2"
+                              :key="`${mod.id}-rail-${i}`"
+                              class="absolute bg-[var(--ui-bg-inverted)] opacity-45"
+                              :style="frameRailStyle(col.width, mod, i - 1)"
                               aria-hidden="true"
                             />
                           </template>

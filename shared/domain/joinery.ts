@@ -125,8 +125,21 @@ export interface PanelContact {
   planeCoordinate: number
 }
 
-/** How close two faces must be to count as touching, metres. */
-const CONTACT_TOLERANCE = 0.0015
+/**
+ * Floor for how close two faces must be to count as touching, metres.
+ *
+ * The real tolerance is derived from the project's own joint clearance: the
+ * compiler insets every module cell by `panelJointClearance`, so panels that
+ * are joined in the finished piece sit that far apart in the model. A fixed
+ * tolerance below the clearance would find no contacts at all.
+ */
+export const MIN_CONTACT_TOLERANCE = 0.0015
+
+/** Contact tolerance for a given joint clearance. */
+export function contactToleranceFor(jointClearance: number): number {
+  const clearance = Number.isFinite(jointClearance) && jointClearance > 0 ? jointClearance : 0
+  return Math.max(MIN_CONTACT_TOLERANCE, clearance * 1.5)
+}
 /** Smallest contact rectangle worth joining, metres. */
 const MIN_CONTACT_SIZE = 0.01
 
@@ -145,7 +158,10 @@ function otherAxes(axis: Axis): [Axis, Axis] {
  * Panels flush along both their thickness axes are coplanar siblings, not a
  * joint, and are skipped.
  */
-export function findPanelContacts(panels: CompiledPanel[]): PanelContact[] {
+export function findPanelContacts(
+  panels: CompiledPanel[],
+  tolerance: number = MIN_CONTACT_TOLERANCE,
+): PanelContact[] {
   const boxes = panels.map(panelAabb)
   const bases = panels.map(panelBasis)
   const contacts: PanelContact[] = []
@@ -159,7 +175,7 @@ export function findPanelContacts(panels: CompiledPanel[]): PanelContact[] {
         // Flush check: a's max meets b's min, or vice versa.
         const aMaxToBMin = Math.abs(a.max[axis] - b.min[axis])
         const bMaxToAMin = Math.abs(b.max[axis] - a.min[axis])
-        const touching = aMaxToBMin <= CONTACT_TOLERANCE || bMaxToAMin <= CONTACT_TOLERANCE
+        const touching = aMaxToBMin <= tolerance || bMaxToAMin <= tolerance
         if (!touching) continue
 
         const [u, v] = otherAxes(axis)
@@ -179,7 +195,7 @@ export function findPanelContacts(panels: CompiledPanel[]): PanelContact[] {
           meeting: aFaces ? panels[j] : panels[i],
           axis,
           overlap: { axes: [u, v], min: [uMin, vMin], max: [uMax, vMax] },
-          planeCoordinate: aMaxToBMin <= CONTACT_TOLERANCE ? a.max[axis] : a.min[axis],
+          planeCoordinate: aMaxToBMin <= tolerance ? a.max[axis] : a.min[axis],
         })
       }
     }
@@ -262,11 +278,15 @@ function makeOperation(base: Omit<PanelOperation, 'id'>, id: string): PanelOpera
  * `butt` returns nothing — panels just meet — which keeps the default project
  * byte-identical to one compiled before joinery existed.
  */
-export function applyJoinery(panels: CompiledPanel[], settings: JoinerySettings): JoineryResult {
+export function applyJoinery(
+  panels: CompiledPanel[],
+  settings: JoinerySettings,
+  jointClearance = 0,
+): JoineryResult {
   const result: JoineryResult = { operations: [], hardware: new Map() }
   if (settings.style === 'butt') return result
 
-  const contacts = findPanelContacts(panels)
+  const contacts = findPanelContacts(panels, contactToleranceFor(jointClearance))
   const hardwareCode = JOINT_STYLE_HARDWARE[settings.style]
   const diameter = Math.max(0.001, settings.fastenerDiameter)
   const depth = Math.max(0.001, settings.fastenerDepth)
