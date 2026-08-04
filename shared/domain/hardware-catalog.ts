@@ -14,6 +14,12 @@ import type { HardwareSpec } from '~~/shared/domain/types'
  *     re-bundled, we point at the same filename pattern so the asset can be
  *     dropped in place when sourced. Local picks are listed below.
  *
+ * IMPORTANT: only `120-038-199.glb` is actually bundled today. Every other
+ * path below is an intent, not a file — requesting one returns the SPA
+ * fallback HTML, which the GLTF loader rejects. `modelBundled` records which
+ * is which so the UI can show an honest placeholder instead of failing
+ * silently. Set it to `true` when you drop the real asset in.
+ *
  * Local picks (filenames preserved verbatim from the original bundle):
  *   A2  woodDowel        → /hardware/models/120-038-199.glb
  *   G1  camLock          → /hardware/models/262_26_031_3.gltf
@@ -37,6 +43,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'Primary alignment dowel for panel-to-panel joints.',
     included: true,
     modelGlbSrc: '/hardware/models/120-038-199.glb',
+    modelBundled: true,
     links: [
       { label: 'Häfele 120.038.199', url: 'https://www.hafele.com' },
     ],
@@ -54,6 +61,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'Eccentric connector housing used with the cam bolt.',
     included: true,
     modelGlbSrc: '/hardware/models/262_26_031_3.gltf',
+    modelBundled: false,
     links: [
       { label: 'Häfele 262.26.031', url: 'https://www.hafele.com' },
     ],
@@ -72,6 +80,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'Threaded connector bolt paired with the cam lock.',
     included: true,
     modelGlbSrc: '/hardware/models/262_27_029_4.gltf',
+    modelBundled: false,
     links: [
       { label: 'Häfele 262.27.029', url: 'https://www.hafele.com' },
     ],
@@ -89,6 +98,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'General structural screw for cabinet assembly.',
     included: true,
     modelGlbSrc: '/hardware/models/015_01_962_2.gltf',
+    modelBundled: false,
     links: [
       { label: 'Häfele 015.01.962', url: 'https://www.hafele.com' },
     ],
@@ -107,6 +117,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'Short system screw for drawer runner mounting.',
     included: true,
     modelGlbSrc: '/hardware/models/BN_1935_1430874_cross_recessed_Euro_screw_6_3x13.glb',
+    modelBundled: false,
     links: [
       { label: 'Bossard BN 1935', url: 'https://www.bossard.com' },
     ],
@@ -122,6 +133,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'Marked as guia DCHA. Right-hand side of a drawer slide pair.',
     included: true,
     modelGlbSrc: '/hardware/models/551_80_935_5.gltf',
+    modelBundled: false,
     links: [
       { label: 'Häfele 551.80.935', url: 'https://www.hafele.com' },
     ],
@@ -137,6 +149,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'Marked as guia IZQ. Left-hand side of a drawer slide pair.',
     included: true,
     modelGlbSrc: '/hardware/models/551_80_935_5.gltf',
+    modelBundled: false,
     links: [
       { label: 'Häfele 551.80.935', url: 'https://www.hafele.com' },
     ],
@@ -152,6 +165,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'Keeps the back panel from moving in its groove.',
     included: true,
     modelGlbSrc: '/hardware/models/260_09_701_1.gltf',
+    modelBundled: false,
     links: [
       { label: 'Häfele 260.09.701', url: 'https://www.hafele.com' },
     ],
@@ -168,7 +182,8 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     lengthMm: 50,
     notes: 'Butt-joint fastener for sheet goods. Needs a stepped pilot: 7 mm through the face panel, 5 mm into the edge.',
     included: false,
-    modelGlbSrc: '/hardware/models/015_01_962_2.gltf',
+    modelGlbSrc: '/hardware/models/confirmat-7x50.glb',
+    modelBundled: false,
     links: [],
     buyLinks: [
       { label: 'Hornbach', url: 'https://www.hornbach.nl' },
@@ -183,7 +198,8 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     lengthMm: 32,
     notes: 'Coarse-thread washer-head screw for pocket-hole joinery in sheet goods.',
     included: false,
-    modelGlbSrc: '/hardware/models/015_01_962_2.gltf',
+    modelGlbSrc: '/hardware/models/pocket-screw-8x32.glb',
+    modelBundled: false,
     links: [],
     buyLinks: [
       { label: 'Amazon.nl', url: 'https://www.amazon.nl' },
@@ -198,7 +214,8 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     lengthMm: 16,
     notes: 'Seats in a 5 mm blind hole on the standard 32 mm system spacing.',
     included: false,
-    modelGlbSrc: '/hardware/models/120-038-199.glb',
+    modelGlbSrc: '/hardware/models/shelf-pin-5mm.glb',
+    modelBundled: false,
     links: [],
     buyLinks: [
       { label: 'Ironware', url: 'https://www.ironware.eu' },
@@ -212,6 +229,7 @@ export const HARDWARE_CATALOG: HardwareSpec[] = [
     notes: 'Padded sticky strip for protecting the bottom/base.',
     included: true,
     modelGlbSrc: '/hardware/models/strip.glb',
+    modelBundled: false,
     links: [],
     buyLinks: [
       { label: 'Amazon.nl', url: 'https://www.amazon.nl' },

@@ -375,7 +375,11 @@ export interface HardwareSpec {
   heightMm?: number
   notes?: string
   included: boolean
+  /** Intended asset path. May point at a file that is not bundled yet. */
   modelGlbSrc: string
+  /** Whether `modelGlbSrc` actually ships in `public/`. Only bundled models
+   *  get a 3D preview; the rest would fail to load and render nothing. */
+  modelBundled: boolean
   links?: { label: string; url: string }[]
   buyLinks?: { label: string; url: string }[]
 }
