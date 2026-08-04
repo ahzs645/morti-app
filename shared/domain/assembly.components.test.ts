@@ -12,6 +12,7 @@ vi.mock('three-bvh-csg', () => ({
 import { compileAssembly } from './assembly'
 import { panelRoleCode } from './cutlist'
 import { DEFAULT_DIVIDER_COUNT, DEFAULT_FURNITURE_CONFIG, DEFAULT_PROJECT_SETTINGS, DEFAULT_SHELF_COUNT, defaultModule } from './defaults'
+import { defaultPanelAttributeMap } from './panel-attributes'
 import type { FurnitureDoc, ModuleType } from './types'
 import { DESIGN_SCHEMA_VERSION } from './types'
 
@@ -21,6 +22,7 @@ function docWithSingleModule(type: ModuleType, extra: Record<string, unknown> = 
     lastAppliedMigrationId: null,
     config: { ...DEFAULT_FURNITURE_CONFIG },
     settings: { ...DEFAULT_PROJECT_SETTINGS },
+    panelAttributes: defaultPanelAttributeMap(),
     columns: [
       { width: 0.5, modules: [{ id: 'm1', type, height: 1.2, ...extra }] },
     ],

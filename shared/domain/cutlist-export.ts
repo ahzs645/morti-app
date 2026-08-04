@@ -7,6 +7,7 @@
 // default, which is what this exporter emitted before units were configurable.
 
 import type { CostingTotals } from './costing'
+import type { BandListReport } from './edgeband'
 import type { ProjectSettings } from './types'
 import { DEFAULT_PROJECT_SETTINGS } from './defaults'
 import {
@@ -38,6 +39,10 @@ export interface CutlistPanelRow {
   weightKg?: number
   /** Material cost of the whole group, in the project currency. */
   cost?: number
+  /** Grain direction code (`L` / `W` / `—`). */
+  grain?: string
+  /** Banded-edge summary, e.g. `T/B/L`. */
+  banding?: string
 }
 
 export interface CutlistOperationRow {
@@ -61,6 +66,8 @@ export interface CutlistData {
   settings?: ProjectSettings
   /** Weight/cost rollup from `costing.ts`, when the project reports it. */
   totals?: CostingTotals
+  /** Edge-banding tape report from `edgeband.ts › computeBandList`. */
+  bandList?: BandListReport
 }
 
 export type CutlistFormat = 'csv' | 'json' | 'html' | 'md'
@@ -99,6 +106,8 @@ interface Presenter {
   showWeight: boolean
   showCost: boolean
   showOperations: boolean
+  showGrain: boolean
+  showBanding: boolean
 }
 
 function roundTo(value: number, precision: number): number {
@@ -112,6 +121,8 @@ function makePresenter(data: CutlistData): Presenter {
   const hasMaterial = data.panels.some(row => row.material != null)
   const hasWeight = data.panels.some(row => row.weightKg != null) || data.totals != null
   const hasCost = data.panels.some(row => row.cost != null) || data.totals != null
+  const hasGrain = data.panels.some(row => row.grain != null)
+  const hasBanding = data.panels.some(row => row.banding != null && row.banding !== '—')
   return {
     settings: s,
     lengthSymbol: LENGTH_UNIT_SYMBOL[s.lengthUnit],
@@ -133,6 +144,8 @@ function makePresenter(data: CutlistData): Presenter {
     showWeight: hasWeight && s.reportWeight,
     showCost: hasCost && s.reportCost,
     showOperations: s.reportOperations,
+    showGrain: hasGrain,
+    showBanding: hasBanding,
   }
 }
 
@@ -149,6 +162,8 @@ export function cutlistFileName(name: string, format: CutlistFormat): string {
 /** Extra columns a project turns on via `reportWeight` / `reportCost`. */
 function panelExtraHeaders(p: Presenter): string[] {
   const headers: string[] = []
+  if (p.showGrain) headers.push('Grain')
+  if (p.showBanding) headers.push('Banding')
   if (p.showMaterial) headers.push('Material')
   if (p.showWeight) headers.push(`Weight (${WEIGHT_UNIT_SYMBOL[p.settings.weightUnit]})`)
   if (p.showCost) headers.push(`Cost (${p.settings.currency})`)
@@ -157,11 +172,34 @@ function panelExtraHeaders(p: Presenter): string[] {
 
 function panelExtraCells(row: CutlistPanelRow, p: Presenter): string[] {
   const cells: string[] = []
+  if (p.showGrain) cells.push(row.grain ?? '')
+  if (p.showBanding) cells.push(row.banding ?? '')
   if (p.showMaterial) cells.push(row.material ?? '')
   if (p.showWeight) cells.push(row.weightKg == null ? '' : formatWeight(row.weightKg, p.settings.weightUnit))
   if (p.showCost) cells.push(row.cost == null ? '' : p.money(row.cost))
   return cells
 }
+
+/** Tape rows shared by every text format (`bandList`). */
+function bandListRows(report: BandListReport, p: Presenter): string[][] {
+  const s = p.settings
+  const edgeOptions = { precision: s.edgePrecision, denominator: s.fractionDenominator }
+  return report.rows.map(row => [
+    row.band.label,
+    String(row.edgeCount),
+    formatLength(row.lengthM, s.edgeUnit, edgeOptions),
+    formatMoney(row.cost, s.currency),
+    row.tooNarrow ? 'tape narrower than panel' : '',
+  ])
+}
+
+const BAND_LIST_HEADERS = (p: Presenter) => [
+  'Edge band',
+  'Edges',
+  `Length (${LENGTH_UNIT_SYMBOL[p.settings.edgeUnit]})`,
+  `Cost (${p.settings.currency})`,
+  'Note',
+]
 
 /** Summary lines shared by every text format. */
 function totalsPairs(totals: CostingTotals, p: Presenter): [string, string][] {
@@ -216,6 +254,12 @@ function toCsv(data: CutlistData): string {
       lines.push(csvRow([o.operationType, o.targetRole, o.face, p.len(o.diameter), p.len(o.depth), p.len(o.width), p.len(o.length), o.through ? 'yes' : 'no', o.quantity]))
     }
   }
+  if (data.bandList && data.bandList.rows.length > 0) {
+    lines.push('')
+    lines.push('Edge banding')
+    lines.push(csvRow(BAND_LIST_HEADERS(p)))
+    for (const row of bandListRows(data.bandList, p)) lines.push(csvRow(row))
+  }
   if (data.totals) {
     lines.push('')
     lines.push('Totals')
@@ -260,6 +304,23 @@ function toJson(data: CutlistData): string {
       through: o.through,
       quantity: o.quantity,
     }))
+  }
+  if (data.bandList && data.bandList.rows.length > 0) {
+    payload.edgeBanding = {
+      rows: data.bandList.rows.map(row => ({
+        band: row.band.label,
+        bandId: row.band.id,
+        thicknessMm: row.band.thicknessMm,
+        widthMm: row.band.widthMm,
+        edges: row.edgeCount,
+        length: p.lenValue(row.lengthM),
+        cost: roundTo(row.cost, 2),
+        tooNarrow: row.tooNarrow,
+      })),
+      totalLength: p.lenValue(data.bandList.totalLengthM),
+      totalCost: roundTo(data.bandList.totalCost, 2),
+      currency: s.currency,
+    }
   }
   if (data.totals) {
     payload.totals = {
@@ -308,6 +369,14 @@ function toMarkdown(data: CutlistData): string {
     }
     if (data.operations.length === 0) out.push('| — | — | — | — | — | — | — | — | — |')
   }
+  if (data.bandList && data.bandList.rows.length > 0) {
+    out.push('')
+    out.push('## Edge banding')
+    out.push('')
+    out.push(`| ${BAND_LIST_HEADERS(p).join(' | ')} |`)
+    out.push('| --- | ---: | ---: | ---: | --- |')
+    for (const row of bandListRows(data.bandList, p)) out.push(`| ${row.join(' | ')} |`)
+  }
   if (data.totals) {
     out.push('')
     out.push('## Totals')
@@ -339,7 +408,7 @@ function toHtml(data: CutlistData): string {
 
   const panelRows = data.panels.map((row) => {
     const extraCells = panelExtraCells(row, p)
-      .map((cell, index) => `<td${index === 0 && p.showMaterial ? '' : ' class="n"'}>${escapeHtml(cell)}</td>`)
+      .map(cell => `<td>${escapeHtml(cell)}</td>`)
       .join('')
     return `<tr><td>${escapeHtml(row.groupId)}</td><td>${escapeHtml(row.role)}</td><td>${escapeHtml(row.orientation)}</td>`
       + `<td class="n">${p.len(row.width)}</td><td class="n">${p.len(row.height)}</td><td class="n">${p.len(row.thickness)}</td><td class="n">${row.quantity}</td>`
@@ -358,6 +427,16 @@ function toHtml(data: CutlistData): string {
 <thead><tr><th>Operation</th><th>Target panel</th><th>Face</th><th>Diameter</th><th>Depth</th><th>Width</th><th>Length</th><th>Through</th><th>Qty</th></tr></thead>
 <tbody>
 ${opRows || '<tr><td colspan="9">No machining operations</td></tr>'}
+</tbody>
+</table>`
+    : ''
+
+  const bandSection = data.bandList && data.bandList.rows.length > 0
+    ? `<h2>Edge banding</h2>
+<table>
+<thead><tr>${BAND_LIST_HEADERS(p).map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
+<tbody>
+${bandListRows(data.bandList, p).map(row => `<tr>${row.map((cell, index) => `<td${index === 0 || index === 4 ? '' : ' class="n"'}>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('\n')}
 </tbody>
 </table>`
     : ''
@@ -398,6 +477,7 @@ ${panelRows || `<tr><td colspan="${panelColumns}">No panels</td></tr>`}
 </tbody>
 </table>
 ${operationsSection}
+${bandSection}
 ${totalsSection}
 </body>
 </html>

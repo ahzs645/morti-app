@@ -20,6 +20,15 @@ import {
   sanitizeProjectSettings,
 } from '~~/shared/domain/defaults'
 import {
+  ALL_PANEL_ROLES,
+  type PanelAttributeMap,
+  type PanelAttributes,
+  defaultPanelAttributeMap,
+  sanitizePanelAttributeMap,
+  sanitizePanelAttributes,
+} from '~~/shared/domain/panel-attributes'
+import { PANEL_EDGES } from '~~/shared/domain/edgeband'
+import {
   DESIGN_SCHEMA_VERSION,
   PROJECT_SETTINGS_KEYS,
   type FurnitureColumn,
@@ -64,6 +73,40 @@ function sanitizeConfigValue<K extends keyof FurnitureConfig>(key: K, value: unk
   return (typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? snapMetric(value)
     : DEFAULT_FURNITURE_CONFIG[key]) as FurnitureConfig[K]
+}
+
+/** Read the `panelAttributes` branch as a POJO, filling any gap with defaults. */
+function readPanelAttributesMap(map: Y.Map<unknown>): PanelAttributeMap {
+  const attributes = map.get('panelAttributes') as Y.Map<unknown> | undefined
+  if (!attributes) return defaultPanelAttributeMap()
+  const raw: Record<string, unknown> = {}
+  for (const role of ALL_PANEL_ROLES) {
+    const entry = attributes.get(role) as Y.Map<unknown> | undefined
+    if (!entry) continue
+    const bands = entry.get('bands') as Y.Map<unknown> | undefined
+    raw[role] = {
+      grain: entry.get('grain'),
+      bands: bands
+        ? Object.fromEntries(PANEL_EDGES.map(edge => [edge, bands.get(edge)]))
+        : undefined,
+    }
+  }
+  return sanitizePanelAttributeMap(raw)
+}
+
+function writePanelAttributes(target: Y.Map<unknown>, role: string, value: PanelAttributes) {
+  let entry = target.get(role) as Y.Map<unknown> | undefined
+  if (!entry) {
+    entry = new Y.Map<unknown>()
+    target.set(role, entry)
+  }
+  entry.set('grain', value.grain)
+  let bands = entry.get('bands') as Y.Map<unknown> | undefined
+  if (!bands) {
+    bands = new Y.Map<unknown>()
+    entry.set('bands', bands)
+  }
+  for (const edge of PANEL_EDGES) bands.set(edge, value.bands[edge])
 }
 
 /** Read the `settings` branch as a POJO, filling any gap with the default. */
@@ -113,6 +156,19 @@ export function ensureInitialized(doc: Y.Doc) {
       for (const key of PROJECT_SETTINGS_KEYS) {
         if (settings.get(key) !== clean[key]) settings.set(key, clean[key])
       }
+    }
+    // Like `settings`, panel attributes are additive — old docs simply seed
+    // the defaults (grain along length, no banding), so no schema bump.
+    if (!map.has('panelAttributes')) {
+      const attributes = new Y.Map<unknown>()
+      map.set('panelAttributes', attributes)
+      const defaults = defaultPanelAttributeMap()
+      for (const role of ALL_PANEL_ROLES) writePanelAttributes(attributes, role, defaults[role])
+    }
+    else {
+      const attributes = map.get('panelAttributes') as Y.Map<unknown>
+      const clean = readPanelAttributesMap(map)
+      for (const role of ALL_PANEL_ROLES) writePanelAttributes(attributes, role, clean[role])
     }
     runPendingMigrations(doc)
     if (!map.has('columns')) {
@@ -246,6 +302,7 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
     lastAppliedMigrationId: (map.get('lastAppliedMigrationId') as string | null) ?? null,
     config,
     settings: readSettingsMap(map),
+    panelAttributes: readPanelAttributesMap(map),
     columns,
   }
 }
@@ -383,6 +440,32 @@ export function setSettingValue<K extends keyof ProjectSettings>(doc: Y.Doc, key
     const clean = sanitizeProjectSettings({ ...current, [key]: value })
     settings.set(key as string, clean[key])
   }, 'setSettingValue')
+}
+
+export function setPanelAttributes(doc: Y.Doc, role: string, value: Partial<PanelAttributes>) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let attributes = map.get('panelAttributes') as Y.Map<unknown> | undefined
+    if (!attributes) {
+      attributes = new Y.Map<unknown>()
+      map.set('panelAttributes', attributes)
+    }
+    const current = readPanelAttributesMap(map)[role as keyof PanelAttributeMap]
+    writePanelAttributes(attributes, role, sanitizePanelAttributes({ ...current, ...value }))
+  }, 'setPanelAttributes')
+}
+
+export function resetPanelAttributes(doc: Y.Doc) {
+  doc.transact(() => {
+    const map = getFurnitureMap(doc)
+    let attributes = map.get('panelAttributes') as Y.Map<unknown> | undefined
+    if (!attributes) {
+      attributes = new Y.Map<unknown>()
+      map.set('panelAttributes', attributes)
+    }
+    const defaults = defaultPanelAttributeMap()
+    for (const role of ALL_PANEL_ROLES) writePanelAttributes(attributes, role, defaults[role])
+  }, 'resetPanelAttributes')
 }
 
 export function resetSettings(doc: Y.Doc) {

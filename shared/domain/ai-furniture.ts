@@ -6,6 +6,7 @@ import {
   cryptoRandomId,
   snapConfig,
 } from './defaults'
+import { defaultPanelAttributeMap } from './panel-attributes'
 import {
   DESIGN_SCHEMA_VERSION,
   type FurnitureColumn,
@@ -123,6 +124,7 @@ function cloneDraft(draft: AiFurnitureDraft): AiFurnitureDraft {
       lastAppliedMigrationId: draft.doc.lastAppliedMigrationId,
       config: { ...draft.doc.config },
       settings: { ...draft.doc.settings },
+      panelAttributes: draft.doc.panelAttributes,
       columns: draft.doc.columns.map(column => ({
         width: column.width,
         modules: column.modules.map(module => ({ ...module })),
@@ -352,6 +354,7 @@ export function normalizeAiFurnitureCurrentDoc(input: unknown): FurnitureDoc {
     schemaVersion: DESIGN_SCHEMA_VERSION,
     lastAppliedMigrationId: null,
     settings: { ...DEFAULT_PROJECT_SETTINGS },
+    panelAttributes: defaultPanelAttributeMap(),
     config,
     columns,
   }
@@ -372,6 +375,7 @@ function normalizeCompactAiFurnitureDraft(input: Record<string, unknown>, curren
       schemaVersion: DESIGN_SCHEMA_VERSION,
       lastAppliedMigrationId: null,
       settings: { ...DEFAULT_PROJECT_SETTINGS },
+      panelAttributes: defaultPanelAttributeMap(),
       config,
       columns,
     },
@@ -397,6 +401,7 @@ export function normalizeAiFurnitureDraft(input: unknown, currentConfig?: Furnit
       schemaVersion: DESIGN_SCHEMA_VERSION,
       lastAppliedMigrationId: null,
       settings: { ...DEFAULT_PROJECT_SETTINGS },
+      panelAttributes: defaultPanelAttributeMap(),
       config,
       columns,
     },

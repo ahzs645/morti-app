@@ -1,3 +1,4 @@
+import type { PanelAttributeMap } from './panel-attributes'
 import type { AreaUnit, FractionDenominator, LengthUnit, VolumeUnit, WeightUnit } from './units'
 
 export type ModuleType = 'shelf' | 'shelves' | 'dividers' | 'drawer' | 'doors' | 'left-door' | 'right-door'
@@ -91,6 +92,8 @@ export interface FurnitureDoc {
   lastAppliedMigrationId: string | null
   config: FurnitureConfig
   settings: ProjectSettings
+  /** Grain direction and edge banding, keyed by `PanelRole`. */
+  panelAttributes: PanelAttributeMap
   columns: FurnitureColumn[]
 }
 

@@ -3,7 +3,20 @@ import type * as Y from 'yjs'
 import type { AiFurnitureDraft, AiFurnitureGenerateResponse } from '~~/shared/domain/ai-furniture'
 import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
 import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_SHELF_COUNT, SHELF_COUNT_MAX, SHELF_COUNT_MIN, DIVIDER_COUNT_MAX, DIVIDER_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
-import type { FurnitureConfig, FurnitureModule, ModuleType, ProjectSettings } from '~~/shared/domain/types'
+import type { FurnitureConfig, FurnitureModule, ModuleType, PanelRole, ProjectSettings } from '~~/shared/domain/types'
+import {
+  ALL_PANEL_ROLES,
+  GRAIN_DIRECTIONS,
+  PANEL_ROLE_LABEL,
+  attributesForRole,
+  type GrainDirection,
+} from '~~/shared/domain/panel-attributes'
+import {
+  EDGE_BAND_LIBRARY,
+  PANEL_EDGES,
+  PANEL_EDGE_LABEL,
+  type PanelEdge,
+} from '~~/shared/domain/edgeband'
 import {
   AREA_UNITS,
   FRACTION_DENOMINATORS,
@@ -27,7 +40,9 @@ import {
   setModuleHeight,
   setModuleType,
   setSettingValue,
+  setPanelAttributes,
   resetSettings,
+  resetPanelAttributes,
 } from '~~/shared/yjs/doc'
 
 interface Props {
@@ -470,6 +485,33 @@ function commitPrecision(key: 'lengthPrecision' | 'edgePrecision' | 'areaPrecisi
   const parsed = Number(input.value)
   if (Number.isFinite(parsed)) updateSetting(key, parsed)
   input.value = String(projectSettings.value[key])
+}
+
+// ---------------------------------------------------------------------------
+// Grain & edge banding (grainH/V/X, bandApply/bandRemove)
+// ---------------------------------------------------------------------------
+
+const grainOpen = ref(false)
+
+/** Sentinel for "no tape" — USelect can't round-trip a null value key. */
+const BARE_EDGE_VALUE = 'none'
+
+const edgeBandItems = [
+  { value: BARE_EDGE_VALUE, label: 'Bare' },
+  ...EDGE_BAND_LIBRARY.map(band => ({ value: band.id, label: band.label })),
+]
+
+function panelAttributesFor(role: PanelRole) {
+  return attributesForRole(snapshot.value.panelAttributes, role)
+}
+
+function setGrain(role: PanelRole, grain: GrainDirection) {
+  setPanelAttributes(props.ydoc, role, { grain })
+}
+
+function setBand(role: PanelRole, edge: PanelEdge, bandId: string) {
+  const bands = { ...panelAttributesFor(role).bands, [edge]: bandId === BARE_EDGE_VALUE ? null : bandId }
+  setPanelAttributes(props.ydoc, role, { bands })
 }
 
 function commitCurrency(event: Event) {
@@ -1256,7 +1298,93 @@ if (getCurrentScope()) {
                     />
                   </template>
                 </AppDialog>
+
+                <AppDialog
+                  v-model:open="grainOpen"
+                  title="Grain &amp; edge banding"
+                  description="Set grain direction and taped edges per panel role. Feeds the 3D preview, cutlist, and tape report."
+                >
+                  <div class="flex flex-wrap items-center justify-end gap-1 border-b border-default pb-3">
+                    <UButton
+                      icon="i-lucide-rotate-ccw"
+                      label="Clear all"
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      aria-label="Reset grain direction and remove all edge banding"
+                      class="active:scale-[0.97] transition-transform duration-150"
+                      @click="resetPanelAttributes(props.ydoc)"
+                    />
+                  </div>
+
+                  <div class="max-h-[min(26rem,60vh)] space-y-3 overflow-y-auto pr-1 text-xs">
+                    <section
+                      v-for="role in ALL_PANEL_ROLES"
+                      :key="role"
+                      class="rounded-lg bg-muted/40 p-2.5"
+                    >
+                      <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
+                        {{ PANEL_ROLE_LABEL[role] }}
+                      </h4>
+                      <div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+                        <span class="text-muted">Grain</span>
+                        <USelect
+                          :model-value="panelAttributesFor(role).grain"
+                          :items="GRAIN_DIRECTIONS"
+                          value-key="value"
+                          label-key="label"
+                          size="xs"
+                          :aria-label="`Grain direction for ${PANEL_ROLE_LABEL[role]}`"
+                          @update:model-value="setGrain(role, $event as never)"
+                        />
+
+                        <span class="self-start pt-1 text-muted">Banding</span>
+                        <div class="grid grid-cols-2 gap-1.5">
+                          <label
+                            v-for="edge in PANEL_EDGES"
+                            :key="edge"
+                            class="flex min-w-0 items-center gap-1.5"
+                          >
+                            <span class="w-12 shrink-0 text-dimmed">{{ PANEL_EDGE_LABEL[edge] }}</span>
+                            <USelect
+                              :model-value="panelAttributesFor(role).bands[edge] ?? BARE_EDGE_VALUE"
+                              :items="edgeBandItems"
+                              value-key="value"
+                              label-key="label"
+                              size="xs"
+                              class="min-w-0 flex-1"
+                              :aria-label="`${PANEL_EDGE_LABEL[edge]} edge band for ${PANEL_ROLE_LABEL[role]}`"
+                              @update:model-value="setBand(role, edge, $event as string)"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+
+                  <template #footer="{ close }">
+                    <UButton
+                      label="Done"
+                      color="neutral"
+                      variant="outline"
+                      class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
+                      @click="close()"
+                    />
+                  </template>
+                </AppDialog>
               </div>
+
+              <UButton
+                icon="i-lucide-layers"
+                label="Grain &amp; edge banding"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                block
+                class="justify-center active:scale-[0.97] transition-transform duration-150"
+                aria-label="Open grain and edge banding settings"
+                @click="grainOpen = true"
+              />
             </div>
           </div>
         </div>

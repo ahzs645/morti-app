@@ -13,6 +13,8 @@ import {
   serializeCutlist,
 } from '~~/shared/domain/cutlist-export'
 import { computeCosting, costingInputsFromGroups } from '~~/shared/domain/costing'
+import { computeBandList, edgeBandSummary } from '~~/shared/domain/edgeband'
+import { GRAIN_DIRECTION_CODE, attributesForRole } from '~~/shared/domain/panel-attributes'
 import { DEFAULT_PUBLIC_STYLE } from '~~/shared/domain/defaults'
 import type { CompiledPanel, PanelRole, PublicStyle } from '~~/shared/domain/types'
 import {
@@ -87,6 +89,10 @@ interface PanelRow {
   weightKg: number
   /** Whole-group material cost, in the project currency. */
   cost: number
+  /** Grain direction code (`L` / `W` / `—`). */
+  grain: string
+  /** Banded-edge summary, e.g. `T/B/L`. */
+  banding: string
 }
 
 interface OperationRow {
@@ -148,6 +154,8 @@ const panelRows = computed<PanelRow[]>(() => {
         material: cost?.materialLabel ?? '—',
         weightKg: cost?.totalWeightKg ?? 0,
         cost: cost?.totalCost ?? 0,
+        grain: GRAIN_DIRECTION_CODE[attributesForRole(snapshot.value.panelAttributes, panel.role).grain],
+        banding: edgeBandSummary(attributesForRole(snapshot.value.panelAttributes, panel.role).bands),
       }
     })
     .sort((a, b) =>
@@ -235,6 +243,7 @@ function formatMetric(value: number | null): string {
 }
 
 const lengthSymbol = computed(() => LENGTH_UNIT_SYMBOL[settings.value.lengthUnit])
+const edgeSymbol = computed(() => LENGTH_UNIT_SYMBOL[settings.value.edgeUnit])
 
 function formatRowWeight(kg: number): string {
   return formatWeight(kg, settings.value.weightUnit)
@@ -251,15 +260,32 @@ const lengthUnitModel = computed({
   set: (unit: LengthUnit) => setSettingValue(props.ydoc, 'lengthUnit', unit),
 })
 
+const bandList = computed(() =>
+  computeBandList(
+    [...panelGroups.value.values()].map(({ representative, quantity }) => ({
+      width: Math.max(0, representative.width),
+      height: Math.max(0, representative.height),
+      thickness: Math.max(0, representative.thickness),
+      quantity,
+      bands: attributesForRole(snapshot.value.panelAttributes, representative.role).bands,
+    })),
+  ),
+)
+
 const totals = computed(() => costing.value.totals)
 
 /** Base 7 columns plus whichever of material/weight/cost the project reports. */
 const panelColumnCount = computed(() =>
-  7
+  9
   + (settings.value.reportWeight || settings.value.reportCost ? 1 : 0)
   + (settings.value.reportWeight ? 1 : 0)
   + (settings.value.reportCost ? 1 : 0),
 )
+
+function formatBandLength(metres: number): string {
+  const s = settings.value
+  return formatLength(metres, s.edgeUnit, { precision: s.edgePrecision, denominator: s.fractionDenominator })
+}
 
 const summary = computed(() => {
   const s = settings.value
@@ -283,6 +309,7 @@ function exportCutlist(format: CutlistFormat) {
       exportedAt: new Date().toISOString(),
       settings: settings.value,
       totals: totals.value,
+      bandList: bandList.value,
       panels: panelRows.value.map(r => ({
         groupId: r.groupId,
         role: r.role,
@@ -294,6 +321,8 @@ function exportCutlist(format: CutlistFormat) {
         material: r.material,
         weightKg: r.weightKg,
         cost: r.cost,
+        grain: r.grain,
+        banding: r.banding,
       })),
       operations: operationRows.value.map(r => ({
         operationType: r.operationType,
@@ -385,6 +414,8 @@ function stop() {}
             <th class="border border-default px-2 py-1.5 font-medium"> Height ({{ lengthSymbol }}) </th>
             <th class="border border-default px-2 py-1.5 font-medium"> Thickness ({{ lengthSymbol }}) </th>
             <th class="border border-default px-2 py-1.5 font-medium">Qty</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Grain</th>
+            <th class="border border-default px-2 py-1.5 font-medium">Banding</th>
             <th
               v-if="settings.reportWeight || settings.reportCost"
               class="border border-default px-2 py-1.5 font-medium"
@@ -439,6 +470,12 @@ function stop() {}
             <td :class="['border px-2 py-1.5 font-semibold tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ row.quantity }}
             </td>
+            <td :class="['border px-2 py-1.5 text-center', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
+              {{ row.grain }}
+            </td>
+            <td :class="['border px-2 py-1.5 text-center', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
+              {{ row.banding }}
+            </td>
             <td
               v-if="settings.reportWeight || settings.reportCost"
               :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']"
@@ -487,6 +524,59 @@ function stop() {}
           </dd>
         </div>
       </dl>
+    </section>
+
+    <section v-if="bandList.rows.length > 0">
+      <h2 class="mb-2 text-balance text-sm font-semibold text-highlighted">
+        Edge banding
+      </h2>
+      <div class="-mx-1 max-w-full overflow-x-auto px-1">
+        <table class="w-full min-w-[32rem] border-collapse text-xs">
+          <thead>
+            <tr class="bg-muted/60 text-left text-muted">
+              <th class="border border-default px-2 py-1.5 font-medium">Edge band</th>
+              <th class="border border-default px-2 py-1.5 font-medium">Edges</th>
+              <th class="border border-default px-2 py-1.5 font-medium">Length ({{ edgeSymbol }})</th>
+              <th class="border border-default px-2 py-1.5 font-medium">Cost</th>
+              <th class="border border-default px-2 py-1.5 font-medium">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in bandList.rows"
+              :key="row.band.id"
+              class="odd:bg-default even:bg-muted/20"
+            >
+              <td class="border border-default px-2 py-1.5 text-highlighted">
+                <span class="inline-flex items-center gap-1.5">
+                  <span
+                    class="inline-block size-2.5 shrink-0 rounded-full ring-1 ring-inset ring-default"
+                    :style="{ backgroundColor: row.band.colorHex }"
+                  />
+                  {{ row.band.label }}
+                </span>
+              </td>
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ row.edgeCount }}</td>
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatBandLength(row.lengthM) }}</td>
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatRowCost(row.cost) }}</td>
+              <td class="border border-default px-2 py-1.5 text-muted">
+                <span
+                  v-if="row.tooNarrow"
+                  class="text-warning"
+                >Tape narrower than panel</span>
+                <span v-else>—</span>
+              </td>
+            </tr>
+            <tr class="bg-muted/40 font-semibold">
+              <td class="border border-default px-2 py-1.5 text-highlighted">Total</td>
+              <td class="border border-default px-2 py-1.5" />
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatBandLength(bandList.totalLengthM) }}</td>
+              <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatRowCost(bandList.totalCost) }}</td>
+              <td class="border border-default px-2 py-1.5" />
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section>
